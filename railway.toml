@@ -1,8 +1,6 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
-buildCommand = ""
-watchPatterns = ["server.js", "circuits/**", "package.json"]
 
 [deploy]
 startCommand = "node server.js"
