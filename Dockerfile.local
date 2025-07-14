@@ -1,0 +1,22 @@
+FROM node:18-slim
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libgmp10 \
+    libsodium23 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy everything including the local rapidsnark binary
+COPY . .
+
+# Install production dependencies
+RUN yarn install --production
+
+# The rapidsnark binary should already be at rapidsnark/rapidsnark
+# Just ensure it's executable
+RUN chmod +x rapidsnark/rapidsnark || echo "rapidsnark binary not found, will need to add it"
+
+EXPOSE 4000
+CMD ["node", "server.js"] 

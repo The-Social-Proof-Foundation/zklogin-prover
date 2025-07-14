@@ -1,6 +1,6 @@
 # zkLogin Proving Service
 
-A zero-knowledge proving service for MYS blockchain (Sui fork) that generates zkLogin proofs using Circom, snarkjs, and rapidsnark.
+A zero-knowledge proving service for the MySocial blockchain that generates zkLogin proofs using Circom, snarkjs, and rapidsnark.
 
 ## Overview
 

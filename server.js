@@ -52,7 +52,14 @@ app.post('/prove', (req, res) => {
     if (!fs.existsSync('inputs')) fs.mkdirSync('inputs');
     if (!fs.existsSync('outputs')) fs.mkdirSync('outputs');
     
-    fs.writeFileSync(inputPath, JSON.stringify(input));
+    // Only pass circuit inputs to witness generation
+    const circuitInputs = {
+      jwtHash: input.jwtHash,
+      nonce: input.nonce,
+      pubKeyHash: input.pubKeyHash
+    };
+    
+    fs.writeFileSync(inputPath, JSON.stringify(circuitInputs));
 
     // Generate witness
     console.log('Generating witness...');
@@ -90,17 +97,30 @@ app.post('/prove', (req, res) => {
     fs.unlinkSync('outputs/proof.json');
     fs.unlinkSync('outputs/public.json');
     
-    // Format response similar to the demo
-    res.json({ 
-      proof: {
-        pi_a: proof.pi_a,
-        pi_b: proof.pi_b,
-        pi_c: proof.pi_c,
-        protocol: proof.protocol,
-        curve: proof.curve
-      },
-      publicSignals
-    });
+    // Format response
+    const response = { 
+      proofPoints: {
+        a: proof.pi_a,
+        b: proof.pi_b,
+        c: proof.pi_c
+      }
+    };
+
+    // Add JWT-related fields if provided in the input
+    if (input.issBase64Details) {
+      response.issBase64Details = input.issBase64Details;
+    }
+    
+    if (input.headerBase64) {
+      response.headerBase64 = input.headerBase64;
+    }
+
+    // Optionally include public signals if needed
+    if (publicSignals && publicSignals.length > 0) {
+      response.publicSignals = publicSignals;
+    }
+
+    res.json(response);
   } catch (e) {
     console.error('Error generating proof:', e.message);
     

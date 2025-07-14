@@ -1,0 +1,27 @@
+FROM node:18-slim
+
+# Install runtime dependencies and wget
+RUN apt-get update && apt-get install -y \
+    libgmp10 \
+    libsodium23 \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files first for better caching
+COPY package*.json ./
+RUN yarn install --production
+
+# Copy the application
+COPY . .
+
+# Download pre-built rapidsnark binary for Linux
+RUN wget https://github.com/iden3/rapidsnark/releases/download/v0.0.2/rapidsnark-linux-x86_64-v0.0.2.tar.gz && \
+    tar -xzf rapidsnark-linux-x86_64-v0.0.2.tar.gz && \
+    mv rapidsnark-linux-x86_64-v0.0.2/prover rapidsnark/rapidsnark && \
+    chmod +x rapidsnark/rapidsnark && \
+    rm -rf rapidsnark-linux-x86_64-v0.0.2*
+
+EXPOSE 4000
+CMD ["node", "server.js"] 

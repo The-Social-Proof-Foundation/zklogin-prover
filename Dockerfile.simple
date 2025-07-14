@@ -1,0 +1,22 @@
+FROM node:18-slim
+
+# Install only runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libgmp10 \
+    libsodium23 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy package files first for better caching
+COPY package*.json ./
+RUN yarn install --production
+
+# Copy the application
+COPY . .
+
+# Ensure rapidsnark binary is executable
+RUN chmod +x rapidsnark/rapidsnark
+
+EXPOSE 4000
+CMD ["node", "server.js"] 
