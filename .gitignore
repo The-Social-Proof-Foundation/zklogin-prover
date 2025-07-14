@@ -1,0 +1,45 @@
+# Node modules
+node_modules/
+
+# Build artifacts
+*.ptau
+*.r1cs
+*.sym
+*.wasm
+*.wtns
+*.zkey
+
+# Temporary files
+inputs/*.json
+outputs/*.json
+outputs/*.wtns
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test files
+test-inputs.js
+calculate-poseidon.js
+test-api.sh
+rapidsnark.log
+
+# Temporary directories
+/tmp/
+
+# Keep the directory structure
+!inputs/.gitkeep
+!outputs/.gitkeep
+!keys/.gitkeep 
