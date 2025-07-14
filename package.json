@@ -11,6 +11,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "test": "node test-circuit.js",
     "compile-circuit": "circom circuits/zklogin_mys.circom --r1cs --wasm --sym --output circuits",
     "setup-zkey": "snarkjs powersoftau new bn128 14 pot14_0000.ptau && snarkjs powersoftau contribute pot14_0000.ptau pot14_0001.ptau --name='Initial contribution' -v -e='random entropy' && snarkjs powersoftau prepare phase2 pot14_0001.ptau pot14_final.ptau -v && snarkjs zkey new circuits/zklogin_mys.r1cs pot14_final.ptau keys/zklogin_mys_0000.zkey && snarkjs zkey contribute keys/zklogin_mys_0000.zkey keys/zklogin_mys_final.zkey --name='Contribution' -v -e='random entropy'"
   }
