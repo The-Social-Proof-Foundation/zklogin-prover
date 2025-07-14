@@ -1,5 +1,6 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 
 // Test circuit compilation and proof generation
 console.log('Testing zkLogin circuit compilation and proof generation...');
@@ -21,12 +22,32 @@ try {
   
   console.log('✅ Circuit files found');
   
+  // Check if required files exist
+  const zkeyFile = 'keys/zklogin_mys_final.zkey';
+  const rapidsnarkBinary = 'rapidsnark/rapidsnark';
+  const wrapperScript = 'rapidsnark-wrapper.sh';
+  
+  console.log('📁 Checking required files...');
+  console.log('  - zkey file:', fs.existsSync(zkeyFile) ? '✅' : '❌', zkeyFile);
+  console.log('  - rapidsnark binary:', fs.existsSync(rapidsnarkBinary) ? '✅' : '❌', rapidsnarkBinary);
+  console.log('  - wrapper script:', fs.existsSync(wrapperScript) ? '✅' : '❌', wrapperScript);
+  
+  // List contents of directories for debugging
+  console.log('📁 Directory contents:');
+  console.log('  - keys/:', fs.existsSync('keys') ? fs.readdirSync('keys').slice(0, 5) : 'NOT FOUND');
+  console.log('  - rapidsnark/:', fs.existsSync('rapidsnark') ? fs.readdirSync('rapidsnark') : 'NOT FOUND');
+  console.log('  - Current directory:', process.cwd());
+  
   // Test with valid inputs (Poseidon(0,0) should equal the expected hash)
   const testInput = {
     jwtHash: "14744269619966411208579211824598458697587494354926760081771325075741142829156",
     nonce: "0",
     pubKeyHash: "0"
   };
+  
+  // Ensure directories exist
+  if (!fs.existsSync('inputs')) fs.mkdirSync('inputs');
+  if (!fs.existsSync('outputs')) fs.mkdirSync('outputs');
   
   // Write test input
   fs.writeFileSync('inputs/test_input.json', JSON.stringify(testInput));
@@ -36,9 +57,27 @@ try {
   execSync(`node circuits/zklogin_mys_js/generate_witness.js circuits/zklogin_mys_js/zklogin_mys.wasm inputs/test_input.json outputs/test_witness.wtns`);
   console.log('✅ Witness generated successfully');
   
-  // Generate proof
-  console.log('🔄 Generating proof...');
-  execSync(`./rapidsnark-wrapper.sh keys/zklogin_mys_final.zkey outputs/test_witness.wtns outputs/test_proof.json outputs/test_public.json`);
+  // Check if witness file was created
+  if (!fs.existsSync('outputs/test_witness.wtns')) {
+    console.error('❌ Witness file not created');
+    process.exit(1);
+  }
+  
+  // Try direct rapidsnark call first to debug
+  console.log('🔄 Testing direct rapidsnark call...');
+  try {
+    const directCmd = `./rapidsnark/rapidsnark keys/zklogin_mys_final.zkey outputs/test_witness.wtns outputs/test_proof.json outputs/test_public.json`;
+    console.log('Command:', directCmd);
+    execSync(directCmd, { stdio: 'inherit' });
+    console.log('✅ Direct rapidsnark call succeeded');
+  } catch (directError) {
+    console.log('❌ Direct rapidsnark call failed, trying with wrapper...');
+    
+    // Generate proof using wrapper
+    console.log('🔄 Generating proof with wrapper...');
+    execSync(`./rapidsnark-wrapper.sh keys/zklogin_mys_final.zkey outputs/test_witness.wtns outputs/test_proof.json outputs/test_public.json`, { stdio: 'inherit' });
+  }
+  
   console.log('✅ Proof generated successfully');
   
   // Read and verify proof
@@ -57,5 +96,6 @@ try {
   
 } catch (error) {
   console.error('❌ Test failed:', error.message);
+  console.error('Stack trace:', error.stack);
   process.exit(1);
 } 

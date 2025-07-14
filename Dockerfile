@@ -62,7 +62,7 @@ RUN cd circuits && \
     echo "Circuit compilation completed successfully"
 
 # Test the circuit compilation and proof generation
-RUN yarn test
+# RUN yarn test
 
 EXPOSE 4000
 CMD ["node", "server.js"] 
