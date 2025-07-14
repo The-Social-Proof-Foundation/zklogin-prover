@@ -34,8 +34,9 @@ RUN yarn install
 # Copy the rest of the application
 COPY . .
 
-# Copy the built rapidsnark binary
-RUN cp /rapidsnark/package/bin/prover rapidsnark/rapidsnark && \
+# Create rapidsnark directory and copy the built binary
+RUN mkdir -p rapidsnark && \
+    cp /rapidsnark/package/bin/prover rapidsnark/rapidsnark && \
     chmod +x rapidsnark/rapidsnark
 
 EXPOSE 4000
