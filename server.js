@@ -4,6 +4,13 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+// Environment configuration
+const ENV = process.env.NODE_ENV || 'testnet';
+const IS_TESTNET = ENV === 'testnet' || ENV === 'development';
+
+console.log(`Starting zkLogin Proving Service in ${ENV} mode`);
+console.log(`Testnet mode: ${IS_TESTNET ? 'ENABLED' : 'DISABLED'}`);
+
 let keysReady = false;
 let keyGenerationInProgress = false;
 let keyGenerationError = null;
@@ -69,11 +76,22 @@ app.use((req, res, next) => {
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
-    service: 'zkLogin Proving Service',
+    service: 'zkLogin Proving Service (Testnet)',
+    environment: ENV,
     version: '1.0.0',
+    network: 'MySo Testnet',
+    description: 'ZK proof generation service for the MySocial blockchain zkLogin authentication',
     endpoints: {
-      POST: '/prove - Generate ZK proof',
-      GET: '/health - Health check'
+      'GET /': 'Service information',
+      'GET /health': 'Health check and key generation status',
+      'GET /debug': 'Debug information (testnet only)',
+      'POST /prove': 'Generate ZK proof for zkLogin authentication'
+    },
+    usage: {
+      'POST /prove': {
+        required: ['jwtHash', 'nonce', 'pubKeyHash'],
+        description: 'Generates a ZK proof for JWT authentication on the MySocial blockchain'
+      }
     }
   });
 });
@@ -105,13 +123,24 @@ app.get('/health', (req, res) => {
   }
 });
 
-// Debug endpoint to check file system
+// Debug endpoint to check file system (testnet only)
 app.get('/debug', (req, res) => {
+  if (!IS_TESTNET) {
+    return res.status(404).json({ error: 'Debug endpoint only available in testnet mode' });
+  }
+  
   try {
     const debug = {
+      environment: ENV,
+      isTestnet: IS_TESTNET,
       cwd: process.cwd(),
+      keyGeneration: {
+        ready: keysReady,
+        inProgress: keyGenerationInProgress,
+        error: keyGenerationError
+      },
       files: {
-        root: fs.existsSync('.') ? fs.readdirSync('.').filter(f => !f.startsWith('.')) : 'NOT FOUND',
+        root: fs.existsSync('.') ? fs.readdirSync('.').filter(f => !f.startsWith('.')).slice(0, 10) : 'NOT FOUND',
         keys: fs.existsSync('keys') ? fs.readdirSync('keys') : 'NOT FOUND',
         rapidsnark: fs.existsSync('rapidsnark') ? fs.readdirSync('rapidsnark') : 'NOT FOUND',
         circuits: fs.existsSync('circuits') ? fs.readdirSync('circuits') : 'NOT FOUND',
@@ -255,8 +284,10 @@ app.post('/prove', (req, res) => {
       publicContent = publicContent.replace(/\0+$/, '');
       
       // Log for debugging
-      console.log('Proof length:', proofContent.length);
-      console.log('Public length:', publicContent.length);
+      if (IS_TESTNET) {
+        console.log('Proof length:', proofContent.length);
+        console.log('Public length:', publicContent.length);
+      }
       
       proof = JSON.parse(proofContent);
       publicSignals = JSON.parse(publicContent);
@@ -273,7 +304,7 @@ app.post('/prove', (req, res) => {
     fs.unlinkSync('outputs/proof.json');
     fs.unlinkSync('outputs/public.json');
     
-    // Format response
+    // Format response for testnet
     const response = { 
       proofPoints: {
         a: proof.pi_a,
@@ -291,9 +322,12 @@ app.post('/prove', (req, res) => {
       response.headerBase64 = input.headerBase64;
     }
 
-    // Optionally include public signals if needed
+    // Optionally include public signals if needed (testnet mode includes more debug info)
     if (publicSignals && publicSignals.length > 0) {
       response.publicSignals = publicSignals;
+      if (IS_TESTNET) {
+        response.isValid = publicSignals[0] === "1";
+      }
     }
 
     res.json(response);
@@ -309,14 +343,19 @@ app.post('/prove', (req, res) => {
     
     res.status(500).json({ 
       error: 'Proof generation failed', 
-      details: e.message 
+      details: IS_TESTNET ? e.message : 'Internal server error',
+      environment: ENV
     });
   }
 });
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`zkLogin Proving Service running on port ${PORT}`);
+  console.log(`zkLogin Proving Service (${ENV}) running on port ${PORT}`);
+  console.log(`Network: MYS Testnet`);
   console.log(`Health check: http://localhost:${PORT}/health`);
   console.log(`Generate proof: POST http://localhost:${PORT}/prove`);
-}); 
+  if (IS_TESTNET) {
+    console.log(`Debug info: GET http://localhost:${PORT}/debug`);
+  }
+});
