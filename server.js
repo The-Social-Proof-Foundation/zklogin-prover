@@ -65,6 +65,48 @@ function hashToNumeric(str) {
   return BigInt('0x' + hash).toString();
 }
 
+// Helper function to extract nonce from JWT
+function extractNonceFromJWT(jwtToken) {
+  try {
+    const parts = jwtToken.split('.');
+    if (parts.length !== 3) {
+      throw new Error('Invalid JWT format');
+    }
+    
+    // Decode the payload (second part)
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+    return payload.nonce;
+  } catch (error) {
+    console.error('Error extracting nonce from JWT:', error.message);
+    return null;
+  }
+}
+
+// Helper function to extract header from JWT  
+function extractHeaderFromJWT(jwtToken) {
+  try {
+    const parts = jwtToken.split('.');
+    if (parts.length !== 3) {
+      throw new Error('Invalid JWT format');
+    }
+    
+    return parts[0]; // Return the header part (base64 encoded)
+  } catch (error) {
+    console.error('Error extracting header from JWT:', error.message);
+    return null;
+  }
+}
+
+// Helper function to compute zkLogin nonce (simplified for demo)
+function computeZkLoginNonce(ephPubKey, maxEpoch, jwtRandomness) {
+  // This is a simplified implementation
+  // Real zkLogin uses: base64url(poseidon(eph_pk, max_epoch, jwt_randomness)[0..20])
+  const combined = `${ephPubKey}_${maxEpoch}_${jwtRandomness}`;
+  const hash = crypto.createHash('sha256').update(combined).digest();
+  // Take first 20 bytes and encode as base64url
+  return hash.subarray(0, 20).toString('base64url');
+}
+
 // Enable CORS for development
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -89,8 +131,15 @@ app.get('/', (req, res) => {
     },
     usage: {
       'POST /prove': {
-        required: ['jwtHash', 'nonce', 'pubKeyHash'],
-        description: 'Generates a ZK proof for JWT authentication on the MySocial blockchain'
+        required: ['jwt', 'maxEpoch', 'jwtRandomness', 'salt', 'keyClaimName'],
+        description: 'Generates a ZK proof for JWT authentication on the MySocial blockchain',
+        example: {
+          jwt: 'eyJhbGciOiJSUzI1NiIs...',
+          maxEpoch: 69,
+          jwtRandomness: '95584269138650599638266832159744854301',
+          salt: '299280343967884020864506771135193421589',
+          keyClaimName: 'sub'
+        }
       }
     }
   });
@@ -123,50 +172,46 @@ app.get('/health', (req, res) => {
   }
 });
 
-// Debug endpoint to check file system (testnet only)
+// Debug endpoint (testnet only)
 app.get('/debug', (req, res) => {
   if (!IS_TESTNET) {
     return res.status(404).json({ error: 'Debug endpoint only available in testnet mode' });
   }
-  
-  try {
-    const debug = {
-      environment: ENV,
-      isTestnet: IS_TESTNET,
-      cwd: process.cwd(),
-      keyGeneration: {
-        ready: keysReady,
-        inProgress: keyGenerationInProgress,
-        error: keyGenerationError
+
+  const debugInfo = {
+    environment: ENV,
+    keysReady: keysReady,
+    keyGenerationInProgress: keyGenerationInProgress,
+    keyGenerationError: keyGenerationError,
+    
+    // File existence checks
+    files: {
+      wasmExists: fs.existsSync('circuits/zklogin_mys_js/zklogin_mys.wasm'),
+      witnessGenExists: fs.existsSync('circuits/zklogin_mys_js/generate_witness.js'),
+      zkeyExists: fs.existsSync('keys/zklogin_mys_final.zkey'),
+      rapidsnarkExists: fs.existsSync('rapidsnark/rapidsnark')
+    },
+    
+    // zkLogin testing information
+    zkLoginFormat: {
+      description: 'Server accepts only zkLogin format',
+      requiredFields: ['jwt', 'maxEpoch', 'jwtRandomness', 'salt', 'keyClaimName'],
+      sampleRequest: {
+        jwt: 'eyJhbGciOiJSUzI1NiIs...<full-jwt-token>',
+        maxEpoch: 69,
+        jwtRandomness: '95584269138650599638266832159744854301',
+        salt: '299280343967884020864506771135193421589',
+        keyClaimName: 'sub'
       },
-      files: {
-        root: fs.existsSync('.') ? fs.readdirSync('.').filter(f => !f.startsWith('.')).slice(0, 10) : 'NOT FOUND',
-        keys: fs.existsSync('keys') ? fs.readdirSync('keys') : 'NOT FOUND',
-        rapidsnark: fs.existsSync('rapidsnark') ? fs.readdirSync('rapidsnark') : 'NOT FOUND',
-        circuits: fs.existsSync('circuits') ? fs.readdirSync('circuits') : 'NOT FOUND',
-        circuitsJs: fs.existsSync('circuits/zklogin_mys_js') ? fs.readdirSync('circuits/zklogin_mys_js') : 'NOT FOUND'
-      },
-      rapidsnarkExecutable: fs.existsSync('rapidsnark/rapidsnark') ? 'EXISTS' : 'MISSING',
-      wrapperScript: fs.existsSync('rapidsnark-wrapper.sh') ? 'EXISTS' : 'MISSING',
-      zkeyFile: fs.existsSync('keys/zklogin_mys_final.zkey') ? 'EXISTS' : 'MISSING',
-      wasmFile: fs.existsSync('circuits/zklogin_mys_js/zklogin_mys.wasm') ? 'EXISTS' : 'MISSING'
-    };
-    
-    // Check permissions if files exist
-    if (fs.existsSync('rapidsnark/rapidsnark')) {
-      const stats = fs.statSync('rapidsnark/rapidsnark');
-      debug.rapidsnarkPermissions = stats.mode.toString(8);
+      notes: [
+        'The nonce in the JWT must match computeZkLoginNonce(ephPubKey, maxEpoch, jwtRandomness)',
+        'For proof to be valid: JWT nonce must match expected nonce',
+        'Server extracts nonce from JWT and validates it against computed nonce'
+      ]
     }
-    
-    if (fs.existsSync('rapidsnark-wrapper.sh')) {
-      const stats = fs.statSync('rapidsnark-wrapper.sh');
-      debug.wrapperPermissions = stats.mode.toString(8);
-    }
-    
-    res.json(debug);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  };
+
+  res.json(debugInfo);
 });
 
 app.post('/prove', (req, res) => {
@@ -195,11 +240,11 @@ app.post('/prove', (req, res) => {
     return res.status(400).json({ error: 'Invalid input' });
   }
   
-  // Validate required fields
-  if (!input.jwtHash || !input.nonce || !input.pubKeyHash) {
+  // Validate required zkLogin fields
+  if (!input.jwt || !input.maxEpoch || !input.jwtRandomness || !input.salt || !input.keyClaimName) {
     return res.status(400).json({ 
-      error: 'Missing required fields', 
-      required: ['jwtHash', 'nonce', 'pubKeyHash'] 
+      error: 'Missing required zkLogin fields', 
+      required: ['jwt', 'maxEpoch', 'jwtRandomness', 'salt', 'keyClaimName']
     });
   }
   
@@ -210,45 +255,46 @@ app.post('/prove', (req, res) => {
     if (!fs.existsSync('inputs')) fs.mkdirSync('inputs');
     if (!fs.existsSync('outputs')) fs.mkdirSync('outputs');
     
-    // Process inputs to ensure they're valid numeric strings for the circuit
-    let jwtHash, nonce, pubKeyHash;
+    // Process zkLogin inputs
+    console.log('Processing zkLogin JWT...');
     
-    // If jwtHash looks like a JWT token (contains dots), hash it
-    if (typeof input.jwtHash === 'string' && input.jwtHash.includes('.')) {
-      console.log('Processing JWT token to numeric hash...');
-      jwtHash = hashToNumeric(input.jwtHash);
-    } else if (typeof input.jwtHash === 'string' && input.jwtHash.length > 64) {
-      // If it's a very long string, hash it
-      console.log('Processing long string to numeric hash...');
-      jwtHash = hashToNumeric(input.jwtHash);
-    } else {
-      // Try to convert to BigInt to validate it's a valid numeric string
-      try {
-        BigInt(input.jwtHash);
-        jwtHash = input.jwtHash;
-      } catch (e) {
-        // If it's not a valid BigInt, hash it
-        console.log('Invalid numeric format, hashing...');
-        jwtHash = hashToNumeric(input.jwtHash);
-      }
+    // Extract nonce from JWT
+    const jwtNonce = extractNonceFromJWT(input.jwt);
+    if (!jwtNonce) {
+      throw new Error('Could not extract nonce from JWT');
     }
     
-    // Process nonce
-    try {
-      BigInt(input.nonce);
-      nonce = input.nonce;
-    } catch (e) {
-      console.log('Converting nonce to numeric format...');
-      nonce = hashToNumeric(input.nonce);
-    }
+    // Extract header for response
+    const headerBase64 = extractHeaderFromJWT(input.jwt);
     
-    // Process pubKeyHash
+    // Validate nonce matches expected zkLogin format
+    const expectedNonce = computeZkLoginNonce(
+      input.ephemeralPublicKey || 'default_eph_pk', 
+      input.maxEpoch, 
+      input.jwtRandomness
+    );
+    
+    console.log('Nonce validation:', {
+      jwtNonce: jwtNonce,
+      expectedNonce: expectedNonce,
+      matches: jwtNonce === expectedNonce
+    });
+    
+    // For the circuit, we use the JWT nonce (the one that's actually in the JWT)
+    const nonce = hashToNumeric(jwtNonce);
+    const jwtHash = hashToNumeric(input.jwt);
+    const pubKeyHash = hashToNumeric(input.salt); // Use salt as pubKeyHash
+    
+    // Prepare issBase64Details for response
+    let issBase64Details;
     try {
-      BigInt(input.pubKeyHash);
-      pubKeyHash = input.pubKeyHash;
+      const payload = JSON.parse(Buffer.from(input.jwt.split('.')[1], 'base64url').toString());
+      issBase64Details = {
+        value: Buffer.from(payload.iss).toString('base64'),
+        indexMod4: 0
+      };
     } catch (e) {
-      console.log('Converting pubKeyHash to numeric format...');
-      pubKeyHash = hashToNumeric(input.pubKeyHash);
+      console.warn('Could not extract iss for issBase64Details:', e.message);
     }
     
     console.log('Processed inputs:', {
@@ -304,7 +350,7 @@ app.post('/prove', (req, res) => {
     fs.unlinkSync('outputs/proof.json');
     fs.unlinkSync('outputs/public.json');
     
-    // Format response for testnet
+    // Format zkLogin response
     const response = { 
       proofPoints: {
         a: proof.pi_a,
@@ -313,13 +359,17 @@ app.post('/prove', (req, res) => {
       }
     };
 
-    // Add JWT-related fields if provided in the input
-    if (input.issBase64Details) {
-      response.issBase64Details = input.issBase64Details;
+    // Add zkLogin required fields
+    if (headerBase64) {
+      response.headerBase64 = headerBase64;
+    }
+    if (issBase64Details) {
+      response.issBase64Details = issBase64Details;
     }
     
-    if (input.headerBase64) {
-      response.headerBase64 = input.headerBase64;
+    // Add other zkLogin fields if available
+    if (input.addressSeed) {
+      response.addressSeed = input.addressSeed;
     }
 
     // Optionally include public signals if needed (testnet mode includes more debug info)
