@@ -66,6 +66,33 @@ RUN cd circuits && \
     ls -la zklogin_mys_js/ && \
     echo "Circuit compilation completed successfully"
 
+# Generate the zkey files (since they're gitignored and not copied)
+# NOTE: This will use persistent volume storage to avoid regenerating keys on each deployment
+RUN echo "Setting up persistent key storage..." && \
+    mkdir -p /app/keys && \
+    echo "Keys directory prepared for volume mount"
+
+# This script will run after volume is mounted, so we'll move key generation to runtime
+COPY <<EOF /app/generate-keys-if-missing.sh
+#!/bin/bash
+echo "Checking for existing zkey files in persistent volume..."
+if [ ! -f "/app/keys/zklogin_mys_final.zkey" ]; then
+    echo "No existing keys found. Generating new zkey files..."
+    cd /app
+    snarkjs powersoftau new bn128 14 keys/pot14_0000.ptau
+    snarkjs powersoftau contribute keys/pot14_0000.ptau keys/pot14_0001.ptau --name="Railway build contribution" -v -e="random build entropy"
+    snarkjs powersoftau prepare phase2 keys/pot14_0001.ptau keys/pot14_final.ptau -v
+    snarkjs groth16 setup circuits/zklogin_mys.r1cs keys/pot14_final.ptau keys/zklogin_mys_0000.zkey
+    snarkjs zkey contribute keys/zklogin_mys_0000.zkey keys/zklogin_mys_final.zkey --name="Railway final contribution" -v -e="final random entropy"
+    echo "Zkey generation completed successfully"
+else
+    echo "Using existing persistent zkey files"
+fi
+ls -la keys/
+EOF
+
+RUN chmod +x /app/generate-keys-if-missing.sh
+
 # Test the circuit compilation and proof generation
 # RUN yarn test
 

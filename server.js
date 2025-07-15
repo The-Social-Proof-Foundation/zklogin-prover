@@ -3,6 +3,26 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+
+// Initialize keys on startup if using persistent volume
+const initializeKeys = () => {
+  console.log('Initializing keys...');
+  try {
+    if (fs.existsSync('/app/generate-keys-if-missing.sh')) {
+      console.log('Running key generation script...');
+      execSync('/app/generate-keys-if-missing.sh', { stdio: 'inherit' });
+    } else {
+      console.log('Key generation script not found, assuming keys are available');
+    }
+  } catch (error) {
+    console.error('Key initialization failed:', error.message);
+    // Don't exit - let the server start and handle missing keys in the /prove endpoint
+  }
+};
+
+// Initialize keys before starting server
+initializeKeys();
+
 const app = express();
 app.use(express.json({ limit: '1mb' })); // Limit payload size
 
