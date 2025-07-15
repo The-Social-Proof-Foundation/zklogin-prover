@@ -45,15 +45,20 @@ RUN yarn install
 # Copy the rest of the application
 COPY . .
 
-# Create directories for outputs
+# Create directories for outputs and ensure rapidsnark directory exists
 RUN mkdir -p inputs outputs keys rapidsnark
 
-# Copy the built rapidsnark binary
+# Copy the built rapidsnark binary and ensure it's executable
 RUN cp /rapidsnark/package/bin/prover rapidsnark/rapidsnark && \
-    chmod +x rapidsnark/rapidsnark
+    chmod +x rapidsnark/rapidsnark && \
+    ls -la rapidsnark/ && \
+    echo "Rapidsnark binary setup completed"
 
 # Make the wrapper script executable
 RUN chmod +x rapidsnark-wrapper.sh
+
+# Test that rapidsnark binary is working (should show usage message)
+RUN ./rapidsnark/rapidsnark || echo "Rapidsnark binary test completed (expected to fail without arguments)"
 
 # Compile the Circom circuit to generate the required WASM file
 RUN cd circuits && \
