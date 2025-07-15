@@ -37,6 +37,41 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+// Debug endpoint to check file system
+app.get('/debug', (req, res) => {
+  try {
+    const debug = {
+      cwd: process.cwd(),
+      files: {
+        root: fs.existsSync('.') ? fs.readdirSync('.').filter(f => !f.startsWith('.')) : 'NOT FOUND',
+        keys: fs.existsSync('keys') ? fs.readdirSync('keys') : 'NOT FOUND',
+        rapidsnark: fs.existsSync('rapidsnark') ? fs.readdirSync('rapidsnark') : 'NOT FOUND',
+        circuits: fs.existsSync('circuits') ? fs.readdirSync('circuits') : 'NOT FOUND',
+        circuitsJs: fs.existsSync('circuits/zklogin_mys_js') ? fs.readdirSync('circuits/zklogin_mys_js') : 'NOT FOUND'
+      },
+      rapidsnarkExecutable: fs.existsSync('rapidsnark/rapidsnark') ? 'EXISTS' : 'MISSING',
+      wrapperScript: fs.existsSync('rapidsnark-wrapper.sh') ? 'EXISTS' : 'MISSING',
+      zkeyFile: fs.existsSync('keys/zklogin_mys_final.zkey') ? 'EXISTS' : 'MISSING',
+      wasmFile: fs.existsSync('circuits/zklogin_mys_js/zklogin_mys.wasm') ? 'EXISTS' : 'MISSING'
+    };
+    
+    // Check permissions if files exist
+    if (fs.existsSync('rapidsnark/rapidsnark')) {
+      const stats = fs.statSync('rapidsnark/rapidsnark');
+      debug.rapidsnarkPermissions = stats.mode.toString(8);
+    }
+    
+    if (fs.existsSync('rapidsnark-wrapper.sh')) {
+      const stats = fs.statSync('rapidsnark-wrapper.sh');
+      debug.wrapperPermissions = stats.mode.toString(8);
+    }
+    
+    res.json(debug);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/prove', (req, res) => {
   const input = req.body;
   // Validate input
