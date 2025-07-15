@@ -1,26 +1,52 @@
 const express = require('express');
-const { execSync } = require('child_process');
+const { execSync, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-// Initialize keys on startup if using persistent volume
-const initializeKeys = () => {
-  console.log('Initializing keys...');
+let keysReady = false;
+let keyGenerationInProgress = false;
+let keyGenerationError = null;
+
+// Initialize keys asynchronously on startup
+const initializeKeys = async () => {
+  console.log('Starting key initialization...');
+  keyGenerationInProgress = true;
+  
   try {
     if (fs.existsSync('/app/generate-keys-if-missing.sh')) {
-      console.log('Running key generation script...');
-      execSync('/app/generate-keys-if-missing.sh', { stdio: 'inherit' });
+      console.log('Running key generation script asynchronously...');
+      
+      // Run the script asynchronously
+      exec('/app/generate-keys-if-missing.sh', (error, stdout, stderr) => {
+        keyGenerationInProgress = false;
+        
+        if (error) {
+          console.error('Key generation failed:', error.message);
+          keyGenerationError = error.message;
+        } else {
+          console.log('Key generation completed successfully');
+          console.log(stdout);
+          keysReady = true;
+        }
+        
+        if (stderr) {
+          console.log('Key generation stderr:', stderr);
+        }
+      });
     } else {
-      console.log('Key generation script not found, assuming keys are available');
+      console.log('Key generation script not found, checking for existing keys...');
+      keysReady = fs.existsSync('keys/zklogin_mys_final.zkey');
+      keyGenerationInProgress = false;
     }
   } catch (error) {
-    console.error('Key initialization failed:', error.message);
-    // Don't exit - let the server start and handle missing keys in the /prove endpoint
+    console.error('Key initialization setup failed:', error.message);
+    keyGenerationError = error.message;
+    keyGenerationInProgress = false;
   }
 };
 
-// Initialize keys before starting server
+// Start key initialization immediately but don't wait for it
 initializeKeys();
 
 const app = express();
@@ -54,7 +80,29 @@ app.get('/', (req, res) => {
 
 // Health check endpoint
 app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  if (keyGenerationInProgress) {
+    res.json({ 
+      status: 'healthy', 
+      keyGeneration: 'in_progress',
+      message: 'Server ready, key generation in progress',
+      timestamp: new Date().toISOString() 
+    });
+  } else if (keysReady) {
+    res.json({ 
+      status: 'healthy', 
+      keyGeneration: 'complete',
+      message: 'Server ready, keys available',
+      timestamp: new Date().toISOString() 
+    });
+  } else {
+    res.json({ 
+      status: 'healthy', 
+      keyGeneration: 'failed',
+      message: 'Server ready, but key generation failed',
+      error: keyGenerationError,
+      timestamp: new Date().toISOString() 
+    });
+  }
 });
 
 // Debug endpoint to check file system
@@ -94,6 +142,25 @@ app.get('/debug', (req, res) => {
 
 app.post('/prove', (req, res) => {
   const input = req.body;
+  
+  // Check if keys are ready
+  if (keyGenerationInProgress) {
+    return res.status(503).json({ 
+      error: 'Service initializing', 
+      message: 'Key generation is still in progress. Please try again in a few minutes.',
+      keyGeneration: 'in_progress'
+    });
+  }
+  
+  if (!keysReady) {
+    return res.status(503).json({ 
+      error: 'Service unavailable', 
+      message: 'Required cryptographic keys are not available.',
+      keyGeneration: 'failed',
+      details: keyGenerationError
+    });
+  }
+  
   // Validate input
   if (!input || typeof input !== 'object') {
     return res.status(400).json({ error: 'Invalid input' });
