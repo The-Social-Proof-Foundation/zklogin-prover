@@ -2,8 +2,15 @@ const express = require('express');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const app = express();
 app.use(express.json({ limit: '1mb' })); // Limit payload size
+
+// Helper function to hash a string and convert to numeric string
+function hashToNumeric(str) {
+  const hash = crypto.createHash('sha256').update(str).digest('hex');
+  return BigInt('0x' + hash).toString();
+}
 
 // Enable CORS for development
 app.use((req, res, next) => {
@@ -52,11 +59,58 @@ app.post('/prove', (req, res) => {
     if (!fs.existsSync('inputs')) fs.mkdirSync('inputs');
     if (!fs.existsSync('outputs')) fs.mkdirSync('outputs');
     
+    // Process inputs to ensure they're valid numeric strings for the circuit
+    let jwtHash, nonce, pubKeyHash;
+    
+    // If jwtHash looks like a JWT token (contains dots), hash it
+    if (typeof input.jwtHash === 'string' && input.jwtHash.includes('.')) {
+      console.log('Processing JWT token to numeric hash...');
+      jwtHash = hashToNumeric(input.jwtHash);
+    } else if (typeof input.jwtHash === 'string' && input.jwtHash.length > 64) {
+      // If it's a very long string, hash it
+      console.log('Processing long string to numeric hash...');
+      jwtHash = hashToNumeric(input.jwtHash);
+    } else {
+      // Try to convert to BigInt to validate it's a valid numeric string
+      try {
+        BigInt(input.jwtHash);
+        jwtHash = input.jwtHash;
+      } catch (e) {
+        // If it's not a valid BigInt, hash it
+        console.log('Invalid numeric format, hashing...');
+        jwtHash = hashToNumeric(input.jwtHash);
+      }
+    }
+    
+    // Process nonce
+    try {
+      BigInt(input.nonce);
+      nonce = input.nonce;
+    } catch (e) {
+      console.log('Converting nonce to numeric format...');
+      nonce = hashToNumeric(input.nonce);
+    }
+    
+    // Process pubKeyHash
+    try {
+      BigInt(input.pubKeyHash);
+      pubKeyHash = input.pubKeyHash;
+    } catch (e) {
+      console.log('Converting pubKeyHash to numeric format...');
+      pubKeyHash = hashToNumeric(input.pubKeyHash);
+    }
+    
+    console.log('Processed inputs:', {
+      jwtHashLength: jwtHash.length,
+      nonceLength: nonce.length,
+      pubKeyHashLength: pubKeyHash.length
+    });
+    
     // Only pass circuit inputs to witness generation
     const circuitInputs = {
-      jwtHash: input.jwtHash,
-      nonce: input.nonce,
-      pubKeyHash: input.pubKeyHash
+      jwtHash: jwtHash,
+      nonce: nonce,
+      pubKeyHash: pubKeyHash
     };
     
     fs.writeFileSync(inputPath, JSON.stringify(circuitInputs));
