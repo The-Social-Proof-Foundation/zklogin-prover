@@ -17,7 +17,7 @@
     "build": "mkdir -p build && circom circuits/zklogin_mys.circom --r1cs --wasm --sym -o build/",
     "build-production": "./build-production.sh",
     "setup": "npm run build && npm run setup-zkey",
-14_0000.ptau pot14_0001.ptau --name='Initial contribution' -v -e='random entropy' && snarkjs powersoftau prepare phase2 pot14_0001.ptau pot14_final.ptau -v && snarkjs groth16 setup build/zklogin_mys.r1cs pot14_final.ptau zklogin_mys_0000.zkey && snarkjs zkey contribute zklogin_mys_0000.zkey zklogin_mys_final.zkey --name='Final contribution' -v -e='final random entropy'",    "setup-zkey": "snarkjs powersoftau new bn128 14 pot14_0000.ptau && snarkjs powersoftau contribute pot
+    "setup-zkey": "snarkjs powersoftau new bn128 14 pot14_0000.ptau && snarkjs powersoftau contribute pot14_0000.ptau pot14_0001.ptau --name='Initial contribution' -v -e='random entropy' && snarkjs powersoftau prepare phase2 pot14_0001.ptau pot14_final.ptau -v && snarkjs groth16 setup build/zklogin_mys.r1cs pot14_final.ptau zklogin_mys_0000.zkey && snarkjs zkey contribute zklogin_mys_0000.zkey zklogin_mys_final.zkey --name='Final contribution' -v -e='final random entropy'",
     "verify-build": "ls -la build/ && ls -la build/zklogin_mys_js/ && echo 'Build verification complete'",
     "dev": "npm run build-production && PORT=3001 node server.js"
   },
