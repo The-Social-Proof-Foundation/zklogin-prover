@@ -63,6 +63,7 @@ RUN ./rapidsnark/rapidsnark || echo "Rapidsnark binary test completed (expected 
 # Run npm run setup to build circuit and generate all required files
 RUN echo "Building circuit and generating keys..." && \
     npm run setup && \
+    cp zklogin_mys_final.zkey build/ && \
     echo "Setup completed successfully" && \
     ls -la build/ && \
     ls -la build/zklogin_mys_js/ && \
