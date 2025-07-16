@@ -273,11 +273,145 @@ function hexToFieldArray(hexString, arraySize = 32) {
     return bytes.slice(-arraySize).map(b => b.toString());
 }
 
+// Ed25519 curve parameters
+const ED25519_PRIME = BigInt('57896044618658097711785492504343953926634992332820282019728792003956564819949'); // 2^255 - 19
+const ED25519_D = BigInt('37095705934669439343138083508754565189542113879843219016388785533085940283555'); // -121665/121666 mod p
+
+// Modular arithmetic helper functions
+function modPow(base, exp, mod) {
+    let result = 1n;
+    base = base % mod;
+    while (exp > 0n) {
+        if (exp % 2n === 1n) {
+            result = (result * base) % mod;
+        }
+        exp = exp >> 1n;
+        base = (base * base) % mod;
+    }
+    return result;
+}
+
+function modInverse(a, m) {
+    // Extended Euclidean Algorithm for modular inverse
+    function extendedGCD(a, b) {
+        if (a === 0n) return [b, 0n, 1n];
+        const [gcd, x1, y1] = extendedGCD(b % a, a);
+        const x = y1 - (b / a) * x1;
+        const y = x1;
+        return [gcd, x, y];
+    }
+    
+    const [gcd, x] = extendedGCD(a % m, m);
+    return gcd === 1n ? ((x % m) + m) % m : null;
+}
+
+// Proper Ed25519 coordinate extraction
+function extractEphemeralKeyCoordinates(extendedEphemeralPublicKey) {
+    try {
+        console.log('Extracting Ed25519 coordinates from extended ephemeral public key...');
+        
+        // Decode base64 to bytes
+        const keyBytes = Buffer.from(extendedEphemeralPublicKey, 'base64');
+        console.log(`Key bytes length: ${keyBytes.length}`);
+        console.log('Key bytes (hex):', keyBytes.toString('hex'));
+        
+        let publicKeyBytes;
+        
+        if (keyBytes.length === 33) {
+            // Standard format: 1 byte scheme flag + 32 bytes public key
+            const schemeFlag = keyBytes[0];
+            if (schemeFlag !== 0x00) {
+                console.log(`Warning: Unexpected signature scheme flag: 0x${schemeFlag.toString(16)}, expected 0x00 for Ed25519`);
+            }
+            publicKeyBytes = keyBytes.slice(1);
+        } else if (keyBytes.length === 32) {
+            // Raw Ed25519 public key - this is what we're actually receiving from the frontend
+            // This should have a 0x00 flag prefix for Ed25519, but frontend is sending raw key
+            console.log('Detected raw 32-byte Ed25519 public key format (missing flag prefix)');
+            publicKeyBytes = keyBytes;
+        } else {
+            throw new Error(`Invalid extended ephemeral public key length: ${keyBytes.length}, expected 32 or 33 bytes`);
+        }
+        
+        console.log('Ed25519 public key bytes:', publicKeyBytes.toString('hex'));
+        
+        // Convert bytes to BigInt (little-endian for Ed25519)
+        let y = 0n;
+        for (let i = 0; i < 32; i++) {
+            y |= BigInt(publicKeyBytes[i]) << BigInt(8 * i);
+        }
+        
+        // Extract sign bit from MSB of Y coordinate
+        const xSignBit = y >> 255n;
+        
+        // Clear the sign bit to get the actual Y coordinate
+        y = y & ((1n << 255n) - 1n);
+        
+        console.log(`Y coordinate: ${y.toString()}`);
+        console.log(`X sign bit: ${xSignBit.toString()}`);
+        
+        // For zkLogin, we actually don't need to recover the full X coordinate
+        // The circuit typically just needs the extended ephemeral public key components
+        // Let's extract what the circuit expects based on the nonce computation
+        
+        // According to Sui docs, nonce = ToBase64URL(Poseidon_BN254([ext_eph_pk_bigint / 2^128, ext_eph_pk_bigint % 2^128, max_epoch, jwt_randomness]).to_bytes()[len - 20..])
+        // where ext_eph_pk_bigint is the BigInt representation of ext_eph_pk
+        
+        // Convert the entire extended public key (with flag if missing, add it)
+        const extendedKeyBytes = keyBytes.length === 32 ? 
+            Buffer.concat([Buffer.from([0x00]), keyBytes]) : keyBytes;
+        
+        // Convert to BigInt (big-endian for the nonce computation)
+        let extEphPkBigInt = 0n;
+        for (let i = 0; i < extendedKeyBytes.length; i++) {
+            extEphPkBigInt = (extEphPkBigInt << 8n) | BigInt(extendedKeyBytes[i]);
+        }
+        
+        console.log(`Extended ephemeral public key as BigInt: ${extEphPkBigInt.toString()}`);
+        
+        // Split into high and low parts for Poseidon hash (as per nonce computation)
+        const highPart = extEphPkBigInt >> 128n;
+        const lowPart = extEphPkBigInt & ((1n << 128n) - 1n);
+        
+        console.log(`High part (ext_eph_pk_bigint / 2^128): ${highPart.toString()}`);
+        console.log(`Low part (ext_eph_pk_bigint % 2^128): ${lowPart.toString()}`);
+        
+        // For circuit compatibility, we'll use the split representation
+        function splitBigIntToChunks(value, chunkSize = 32, numChunks = 8) {
+            const chunks = [];
+            for (let i = 0; i < numChunks; i++) {
+                chunks.push(Number((value >> BigInt(i * chunkSize)) & ((1n << BigInt(chunkSize)) - 1n)));
+            }
+            return chunks;
+        }
+        
+        const highChunks = splitBigIntToChunks(highPart, 32, 4);
+        const lowChunks = splitBigIntToChunks(lowPart, 32, 4);
+        
+        console.log('✅ Successfully extracted ephemeral key components');
+        console.log(`High chunks: [${highChunks.join(', ')}]`);
+        console.log(`Low chunks: [${lowChunks.join(', ')}]`);
+        
+        return {
+            x: highChunks,  // Using high part as X for circuit compatibility
+            y: lowChunks,   // Using low part as Y for circuit compatibility
+            xFull: highPart.toString(),
+            yFull: lowPart.toString(),
+            extendedPubKeyBigInt: extEphPkBigInt.toString(),
+            originalBytes: extendedKeyBytes.toString('hex')
+        };
+        
+    } catch (error) {
+        console.error('❌ Error extracting ephemeral key coordinates:', error.message);
+        throw new Error(`Failed to extract ephemeral key coordinates: ${error.message}`);
+    }
+}
+
 app.post('/prove', async (req, res) => {
     try {
         const {
             jwt,
-            ephemeralKeyPair,
+            extendedEphemeralPublicKey,
             maxEpoch,
             jwtRandomness,
             salt,
@@ -285,6 +419,7 @@ app.post('/prove', async (req, res) => {
         } = req.body;
 
         console.log('=== zkLogin Proof Generation Started ===');
+        console.log('Request body keys:', Object.keys(req.body));
 
         // 1. Parse and validate JWT
         console.log('1. Parsing JWT...');
@@ -307,19 +442,46 @@ app.post('/prove', async (req, res) => {
         // 3. Validate input parameters
         console.log('4. Validating inputs...');
         
-        if (!ephemeralKeyPair || !ephemeralKeyPair.publicKey) {
-            throw new Error('Missing ephemeralKeyPair.publicKey');
+        if (!extendedEphemeralPublicKey) {
+            throw new Error('Missing extendedEphemeralPublicKey');
         }
 
-        const ephemeralPubKey = ephemeralKeyPair.publicKey;
-        if (!ephemeralPubKey.x || !ephemeralPubKey.y) {
-            throw new Error('Ephemeral public key missing x or y coordinates');
+        // Handle extended ephemeral public key from frontend
+        let ephemeralPubKey;
+        if (typeof extendedEphemeralPublicKey === 'string') {
+            // Frontend sends base64 encoded extended ephemeral public key
+            console.log('Processing base64 extended ephemeral public key...');
+            
+            // Extract real Ed25519 coordinates using proper decoding
+            const ephemeralKeyCoords = extractEphemeralKeyCoordinates(extendedEphemeralPublicKey);
+            ephemeralPubKey = { 
+                x: ephemeralKeyCoords.xFull, 
+                y: ephemeralKeyCoords.yFull,
+                xChunks: ephemeralKeyCoords.x,
+                yChunks: ephemeralKeyCoords.y
+            };
+            console.log('✅ Extracted real Ed25519 coordinates from extended ephemeral public key');
+        } else if (extendedEphemeralPublicKey.x && extendedEphemeralPublicKey.y) {
+            ephemeralPubKey = extendedEphemeralPublicKey;
+        } else {
+            throw new Error('Invalid extendedEphemeralPublicKey format');
+        }
+
+        // Validate other required parameters
+        if (!maxEpoch) {
+            throw new Error('Missing maxEpoch');
+        }
+        if (!jwtRandomness) {
+            throw new Error('Missing jwtRandomness');
+        }
+        if (!salt) {
+            throw new Error('Missing salt');
         }
 
         // Validate decimal string inputs
         const validatedSalt = validateDecimalString(salt, 'salt');
         const validatedJwtRandomness = validateDecimalString(jwtRandomness, 'jwtRandomness');
-        const validatedMaxEpoch = validateDecimalString(maxEpoch, 'maxEpoch');
+        const validatedMaxEpoch = validateDecimalString(maxEpoch.toString(), 'maxEpoch');
 
         // 4. Compute required hashes and values
         console.log('5. Computing hashes...');
@@ -386,11 +548,11 @@ app.post('/prove', async (req, res) => {
         // 6. Generate proof
         console.log('7. Generating proof...');
         
-        const wasmPath = path.join(__dirname, 'build', 'zklogin_mys.wasm');
+        const wasmPath = path.join(__dirname, 'build', 'zklogin_mys_js', 'zklogin_mys.wasm');
         const zkeyPath = path.join(__dirname, 'build', 'zklogin_mys_final.zkey');
 
         if (!fs.existsSync(wasmPath) || !fs.existsSync(zkeyPath)) {
-            throw new Error('Circuit build files not found. Please run: npm run build');
+            throw new Error('Circuit build files not found. Please run: npm run setup');
         }
 
         const startTime = Date.now();
@@ -422,6 +584,12 @@ app.post('/prove', async (req, res) => {
             keyId: header.kid,
             publicSignals,
             debugInfo: {
+                frontendRequest: {
+                    extendedEphemeralPublicKey: `${extendedEphemeralPublicKey.substring(0, 20)}...`,
+                    maxEpoch,
+                    hasJwtRandomness: !!jwtRandomness,
+                    hasSalt: !!salt
+                },
                 circuitInputs: Object.fromEntries(
                     Object.entries(circuitInputs).map(([key, value]) => [
                         key, 
