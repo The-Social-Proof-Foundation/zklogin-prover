@@ -1,18 +1,25 @@
 {
   "name": "zklogin-prover",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "main": "server.js",
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "axios": "^1.6.2",
+    "snarkjs": "^0.7.0"
   },
   "devDependencies": {
-    "circomlib": "^2.0.5",
-    "snarkjs": "^0.7.0"
+    "circomlib": "^2.0.5"
   },
   "scripts": {
     "start": "node server.js",
     "test": "node test-circuit.js",
-    "compile-circuit": "circom circuits/zklogin_mys.circom --r1cs --wasm --sym --output circuits",
-    "setup-zkey": "snarkjs powersoftau new bn128 14 pot14_0000.ptau && snarkjs powersoftau contribute pot14_0000.ptau pot14_0001.ptau --name='Initial contribution' -v -e='random entropy' && snarkjs powersoftau prepare phase2 pot14_0001.ptau pot14_final.ptau -v && snarkjs zkey new circuits/zklogin_mys.r1cs pot14_final.ptau keys/zklogin_mys_0000.zkey && snarkjs zkey contribute keys/zklogin_mys_0000.zkey keys/zklogin_mys_final.zkey --name='Contribution' -v -e='random entropy'"
-  }
+    "build": "mkdir -p build && circom circuits/zklogin_mys.circom --r1cs --wasm --sym -o build/",
+    "setup": "npm run build && npm run setup-zkey",
+    "setup-zkey": "snarkjs powersoftau new bn128 14 pot14_0000.ptau && snarkjs powersoftau contribute pot14_0000.ptau pot14_0001.ptau --name='Initial contribution' -v -e='random entropy' && snarkjs powersoftau prepare phase2 pot14_0001.ptau pot14_final.ptau -v && snarkjs zkey new build/zklogin_mys.r1cs pot14_final.ptau build/zklogin_mys_0000.zkey && snarkjs zkey contribute build/zklogin_mys_0000.zkey build/zklogin_mys_final.zkey --name='Contribution' -v -e='random entropy'"
+  },
+  "description": "Production-ready zkLogin proving service with RSA signature verification and real OAuth JWK integration",
+  "keywords": ["zklogin", "zero-knowledge", "jwt", "rsa", "oauth", "blockchain"],
+  "author": "zkLogin Prover Team",
+  "license": "MIT"
 } 
