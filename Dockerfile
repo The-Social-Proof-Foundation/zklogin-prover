@@ -60,57 +60,15 @@ RUN chmod +x rapidsnark-wrapper.sh
 # Test that rapidsnark binary is working (should show usage message)
 RUN ./rapidsnark/rapidsnark || echo "Rapidsnark binary test completed (expected to fail without arguments)"
 
-# Compile the Circom circuit to generate the required WASM file
-RUN cd circuits && \
-    circom zklogin_mys.circom --r1cs --wasm --sym --c && \
-    ls -la zklogin_mys_js/ && \
-    echo "Circuit compilation completed successfully"
-
-# Create build directory structure for server compatibility
-RUN mkdir -p build/zklogin_mys_js && \
-    cp circuits/zklogin_mys_js/* build/zklogin_mys_js/ && \
-    cp circuits/zklogin_mys.r1cs build/ && \
-    cp circuits/zklogin_mys.sym build/ && \
+# Run npm run setup to build circuit and generate all required files
+RUN echo "Building circuit and generating keys..." && \
+    npm run setup && \
+    echo "Setup completed successfully" && \
     ls -la build/ && \
     ls -la build/zklogin_mys_js/ && \
-    echo "Build directory structure created successfully"
-
-# Generate the zkey files (since they're gitignored and not copied)
-# NOTE: This will use persistent volume storage to avoid regenerating keys on each deployment
-RUN echo "Setting up persistent key storage..." && \
-    mkdir -p /app/keys && \
-    echo "Keys directory prepared for volume mount"
-
-# This script will run after volume is mounted, so we'll move key generation to runtime
-COPY <<EOF /app/generate-keys-if-missing.sh
-#!/bin/bash
-echo "Checking for existing zkey files in persistent volume..."
-if [ ! -f "/app/keys/zklogin_mys_final.zkey" ]; then
-    echo "No existing keys found. Generating new zkey files..."
-    cd /app
-    ./node_modules/.bin/snarkjs powersoftau new bn128 14 keys/pot14_0000.ptau
-    ./node_modules/.bin/snarkjs powersoftau contribute keys/pot14_0000.ptau keys/pot14_0001.ptau --name="Railway build contribution" -v -e="random build entropy"
-    ./node_modules/.bin/snarkjs powersoftau prepare phase2 keys/pot14_0001.ptau keys/pot14_final.ptau -v
-    ./node_modules/.bin/snarkjs groth16 setup build/zklogin_mys.r1cs keys/pot14_final.ptau keys/zklogin_mys_0000.zkey
-    ./node_modules/.bin/snarkjs zkey contribute keys/zklogin_mys_0000.zkey keys/zklogin_mys_final.zkey --name="Railway final contribution" -v -e="final random entropy"
-    echo "Zkey generation completed successfully"
-else
-    echo "Using existing persistent zkey files"
-fi
-
-# Ensure zkey files are also copied to build directory for server access
-if [ -f "/app/keys/zklogin_mys_final.zkey" ]; then
-    cp /app/keys/zklogin_mys_final.zkey /app/build/
-    echo "Copied zkey file to build directory"
-fi
-ls -la keys/
-ls -la build/
-EOF
-
-RUN chmod +x /app/generate-keys-if-missing.sh
-
-# Test the circuit compilation and proof generation
-# RUN yarn test
+    echo "Verifying required files:" && \
+    echo "WASM: $(test -f build/zklogin_mys_js/zklogin_mys.wasm && echo 'EXISTS' || echo 'MISSING')" && \
+    echo "ZKEY: $(test -f build/zklogin_mys_final.zkey && echo 'EXISTS' || echo 'MISSING')"
 
 EXPOSE 4000
-CMD ["/bin/bash", "-c", "/app/generate-keys-if-missing.sh && node server.js"] 
+CMD ["node", "server.js"] 
