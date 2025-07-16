@@ -66,6 +66,15 @@ RUN cd circuits && \
     ls -la zklogin_mys_js/ && \
     echo "Circuit compilation completed successfully"
 
+# Create build directory structure for server compatibility
+RUN mkdir -p build/zklogin_mys_js && \
+    cp circuits/zklogin_mys_js/* build/zklogin_mys_js/ && \
+    cp circuits/zklogin_mys.r1cs build/ && \
+    cp circuits/zklogin_mys.sym build/ && \
+    ls -la build/ && \
+    ls -la build/zklogin_mys_js/ && \
+    echo "Build directory structure created successfully"
+
 # Generate the zkey files (since they're gitignored and not copied)
 # NOTE: This will use persistent volume storage to avoid regenerating keys on each deployment
 RUN echo "Setting up persistent key storage..." && \
@@ -82,13 +91,20 @@ if [ ! -f "/app/keys/zklogin_mys_final.zkey" ]; then
     ./node_modules/.bin/snarkjs powersoftau new bn128 14 keys/pot14_0000.ptau
     ./node_modules/.bin/snarkjs powersoftau contribute keys/pot14_0000.ptau keys/pot14_0001.ptau --name="Railway build contribution" -v -e="random build entropy"
     ./node_modules/.bin/snarkjs powersoftau prepare phase2 keys/pot14_0001.ptau keys/pot14_final.ptau -v
-    ./node_modules/.bin/snarkjs groth16 setup circuits/zklogin_mys.r1cs keys/pot14_final.ptau keys/zklogin_mys_0000.zkey
+    ./node_modules/.bin/snarkjs groth16 setup build/zklogin_mys.r1cs keys/pot14_final.ptau keys/zklogin_mys_0000.zkey
     ./node_modules/.bin/snarkjs zkey contribute keys/zklogin_mys_0000.zkey keys/zklogin_mys_final.zkey --name="Railway final contribution" -v -e="final random entropy"
     echo "Zkey generation completed successfully"
 else
     echo "Using existing persistent zkey files"
 fi
+
+# Ensure zkey files are also copied to build directory for server access
+if [ -f "/app/keys/zklogin_mys_final.zkey" ]; then
+    cp /app/keys/zklogin_mys_final.zkey /app/build/
+    echo "Copied zkey file to build directory"
+fi
 ls -la keys/
+ls -la build/
 EOF
 
 RUN chmod +x /app/generate-keys-if-missing.sh
@@ -97,4 +113,4 @@ RUN chmod +x /app/generate-keys-if-missing.sh
 # RUN yarn test
 
 EXPOSE 4000
-CMD ["node", "server.js"] 
+CMD ["/bin/bash", "-c", "/app/generate-keys-if-missing.sh && node server.js"] 
