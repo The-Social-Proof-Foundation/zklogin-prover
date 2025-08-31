@@ -5,7 +5,6 @@ const fs = require('fs');
 const path = require('path');
 const snarkjs = require('snarkjs');
 const axios = require('axios');
-const { formatProofForMySoKit } = require('./proof_formatter');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -709,13 +708,28 @@ app.post('/prove', async (req, res) => {
         }
 
         // 7. Format response according to zkLogin standard
-        // Use a specialized formatter to ensure proof points are correctly formatted for MySoKit
-        const formattedProofPoints = formatProofForMySoKit(proof);
+        // CRITICAL: MySoKit expects only 2 elements in pi_a, but snarkjs generates 3
+        // Remove the third element (normalization factor) from pi_a
+        console.log('Raw proof structure:');
+        console.log('pi_a:', JSON.stringify(proof.pi_a), `(length: ${proof.pi_a.length})`);
         
-        // Ensure all data is properly formatted and stringified
+        // Simple direct approach - just use the first two elements of pi_a
         const response = {
             isValid: true,
-            proofPoints: formattedProofPoints,
+            proofPoints: {
+                a: [
+                    proof.pi_a[0].toString(),
+                    proof.pi_a[1].toString()
+                ],
+                b: [
+                    [proof.pi_b[0][0].toString(), proof.pi_b[0][1].toString()],
+                    [proof.pi_b[1][0].toString(), proof.pi_b[1][1].toString()]
+                ],
+                c: [
+                    proof.pi_c[0].toString(),
+                    proof.pi_c[1].toString()
+                ]
+            },
             issBase64Details: {
                 value: payload.iss,
                 indexMod4: 0
@@ -743,18 +757,11 @@ app.post('/prove', async (req, res) => {
         };
 
         try {
-            // Log full proof structure for debugging
+            // Log simplified version of proof for debugging
             console.log('Response generated with proof points:');
-            console.log('a:', JSON.stringify(response.proofPoints.a));
-            console.log('b:', JSON.stringify(response.proofPoints.b));
-            console.log('c:', JSON.stringify(response.proofPoints.c));
-            
-            // Log structure details to verify
             console.log('a length:', response.proofPoints.a.length);
-            console.log('b length:', response.proofPoints.b.length);
-            console.log('b[0] length:', response.proofPoints.b[0].length);
-            console.log('b[1] length:', response.proofPoints.b[1].length);
-            console.log('c length:', response.proofPoints.c.length);
+            console.log('a[0] sample:', response.proofPoints.a[0].substring(0, 20) + '...');
+            console.log('a[1] sample:', response.proofPoints.a[1].substring(0, 20) + '...');
             console.log('=== zkLogin Proof Generation Complete ===');
             
             // Force all proof values to be exactly formatted the way MySoKit expects
