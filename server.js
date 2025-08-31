@@ -713,13 +713,15 @@ app.post('/prove', async (req, res) => {
         const response = {
             isValid: true,
             proofPoints: {
-                // MySoKit requires exact string format - use number.toString() instead of String() for full precision
-                a: [proof.pi_a[0].toString(), proof.pi_a[1].toString()],
+                // MySoKit requires specific BN254 field element formatting
+                // Force all points to be plain strings with no scientific notation
+                // BigInt in MySoKit expects the points in exact decimal string format
+                a: proof.pi_a.map(n => BigInt(n).toString(10)),
                 b: [
-                    [proof.pi_b[0][1].toString(), proof.pi_b[0][0].toString()],
-                    [proof.pi_b[1][1].toString(), proof.pi_b[1][0].toString()]
+                    proof.pi_b[0].map(n => BigInt(n).toString(10)).reverse(),
+                    proof.pi_b[1].map(n => BigInt(n).toString(10)).reverse()
                 ],
-                c: [proof.pi_c[0].toString(), proof.pi_c[1].toString()]
+                c: proof.pi_c.map(n => BigInt(n).toString(10))
             },
             issBase64Details: {
                 value: payload.iss,
@@ -759,15 +761,21 @@ app.post('/prove', async (req, res) => {
             });
             console.log('=== zkLogin Proof Generation Complete ===');
             
-            // Ensure the response JSON maintains exact number precision
-            const serializedResponse = JSON.stringify(response, (key, value) => {
-                // Ensure all numeric fields are preserved as exact strings
-                if (key === 'a' || key === 'b' || key === 'c' || 
-                    key === 'pi_a' || key === 'pi_b' || key === 'pi_c') {
-                    return value;
-                }
-                return value;
-            });
+            // Force all proof values to be exactly formatted the way MySoKit expects
+            const cleanResponse = {
+                ...response,
+                // Ensure public signals are also formatted correctly
+                publicSignals: response.publicSignals.map(s => s.toString().replace('e', '').replace('+', ''))
+            };
+            
+            // Log the actual proof points we're sending (first few characters)
+            console.log('DEBUG - Actual proof point values:');
+            console.log(`a[0]: ${response.proofPoints.a[0].substring(0, 30)}...`);
+            console.log(`a[1]: ${response.proofPoints.a[1].substring(0, 30)}...`);
+            console.log(`b[0][0]: ${response.proofPoints.b[0][0].substring(0, 30)}...`);
+            
+            // Serialize response with stringified BigInts
+            const serializedResponse = JSON.stringify(cleanResponse);
             
             // Send response with appropriate headers
             res.setHeader('Content-Type', 'application/json');
