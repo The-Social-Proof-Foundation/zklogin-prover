@@ -431,6 +431,11 @@ function extractEphemeralKeyCoordinates(extendedEphemeralPublicKey) {
 }
 
 app.post('/prove', async (req, res) => {
+    // Create a timeout promise for the entire operation
+    const operationTimeout = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Operation timed out after 90 seconds')), 90000);
+    });
+    
     try {
         const {
             jwt,
@@ -702,6 +707,8 @@ app.post('/prove', async (req, res) => {
         console.log('pi_c:', JSON.stringify(newProof.pi_c));
         
         // Log exact values being used
+        const a0 = newProof.pi_a[0].toString();
+        const a1 = newProof.pi_a[1].toString();
         console.log('Using exact decimal string values:');
         console.log('a0:', a0);
         console.log('a1:', a1);
