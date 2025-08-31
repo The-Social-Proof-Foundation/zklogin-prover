@@ -596,11 +596,64 @@ app.post('/prove', async (req, res) => {
         // 6. Generate proof
         console.log('7. Generating proof...');
         
-        const wasmPath = path.join(__dirname, 'circuits', 'zklogin_mys_js', 'zklogin_mys.wasm');
-        const zkeyPath = path.join(__dirname, 'keys', 'zklogin_mys_final.zkey');
+        // Try multiple possible paths for the files
+        let wasmPath, zkeyPath;
+        const possibleWasmPaths = [
+            path.join(__dirname, 'build', 'zklogin_mys_js', 'zklogin_mys.wasm'),
+            path.join(__dirname, 'circuits', 'zklogin_mys_js', 'zklogin_mys.wasm')
+        ];
+        
+        const possibleZkeyPaths = [
+            path.join(__dirname, 'build', 'zklogin_mys_final.zkey'),
+            path.join(__dirname, 'keys', 'zklogin_mys_final.zkey')
+        ];
+        
+        // Find the first available WASM file
+        for (const wPath of possibleWasmPaths) {
+            if (fs.existsSync(wPath)) {
+                wasmPath = wPath;
+                console.log(`Found WASM file at: ${wasmPath}`);
+                break;
+            }
+        }
+        
+        // Find the first available ZKEY file
+        for (const zPath of possibleZkeyPaths) {
+            if (fs.existsSync(zPath)) {
+                zkeyPath = zPath;
+                console.log(`Found ZKEY file at: ${zkeyPath}`);
+                break;
+            }
+        }
 
-        if (!fs.existsSync(wasmPath) || !fs.existsSync(zkeyPath)) {
-            throw new Error('Circuit build files not found. Please run: npm run setup');
+        if (!wasmPath) {
+            console.error('WASM file not found in any of the expected locations.');
+            console.log('Searched in:');
+            possibleWasmPaths.forEach(p => console.log(` - ${p}`));
+            throw new Error('WASM file not found. Please run: npm run setup');
+        }
+        
+        if (!zkeyPath) {
+            console.error('ZKEY file not found in any of the expected locations.');
+            console.log('Searched in:');
+            possibleZkeyPaths.forEach(p => console.log(` - ${p}`));
+            throw new Error('ZKEY file not found. Please run: npm run setup');
+        }
+        
+        // Log all files in the directories for debugging
+        try {
+            console.log('Contents of build directory:');
+            console.log(fs.readdirSync(path.join(__dirname, 'build')).join('\n'));
+            
+            console.log('Contents of build/zklogin_mys_js directory:');
+            const buildZkloginDir = path.join(__dirname, 'build', 'zklogin_mys_js');
+            if (fs.existsSync(buildZkloginDir)) {
+                console.log(fs.readdirSync(buildZkloginDir).join('\n'));
+            } else {
+                console.log('Directory does not exist');
+            }
+        } catch (dirError) {
+            console.error('Error listing directories:', dirError);
         }
 
         const startTime = Date.now();
