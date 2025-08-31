@@ -9,41 +9,12 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Enable CORS with specific options for better connection handling
-app.use(cors({
-    origin: '*',
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-    exposedHeaders: ['Content-Length', 'Content-Type'],
-    credentials: true,
-    maxAge: 86400, // 24 hours
-    preflightContinue: false,
-    optionsSuccessStatus: 204
-}));
+app.use(cors());
 // Increase request timeout for intensive proof operations
 app.use((req, res, next) => {
-    // Set timeout to 180 seconds for proof generation
-    req.setTimeout(180000);
-    res.setTimeout(180000);
-    
-    // Set TCP keep-alive to prevent connection drops
-    if (req.socket) {
-        req.socket.setKeepAlive(true);
-        req.socket.setTimeout(0); // Disable socket timeout
-    }
-    
-    // Add connection error handling with detailed logging
-    req.on('error', (err) => {
-        console.error('Request error:', err.message, err.stack);
-    });
-    
-    res.on('error', (err) => {
-        console.error('Response error:', err.message, err.stack);
-    });
-    
-    // Log connection info
-    console.log(`New request from ${req.ip || 'unknown'} for ${req.path}`);
-    
+    // Set timeout to 120 seconds for proof generation
+    req.setTimeout(120000);
+    res.setTimeout(120000);
     next();
 });
 // Increase JSON payload limit for JWT and proof data
@@ -460,14 +431,6 @@ function extractEphemeralKeyCoordinates(extendedEphemeralPublicKey) {
 }
 
 app.post('/prove', async (req, res) => {
-    // Set up keep-alive to prevent connection termination
-    res.connection.setTimeout(0); // Disable timeout for this connection
-    req.socket.setKeepAlive(true);
-    
-    // Create a timeout promise for the entire operation
-    const operationTimeout = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Operation timed out after 90 seconds')), 90000);
-    });
     try {
         const {
             jwt,
