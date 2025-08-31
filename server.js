@@ -743,38 +743,32 @@ app.post('/prove', async (req, res) => {
         console.log('a0:', a0);
         console.log('a1:', a1);
         
-        // Use the new proof object directly
+        // Create a minimal response with only essential fields
+        // MySoKit might be timing out due to response size or format
         const response = {
             isValid: true,
             proofPoints: {
-                a: newProof.pi_a,
-                b: newProof.pi_b,
-                c: newProof.pi_c
+                a: [
+                    newProof.pi_a[0].toString(),
+                    newProof.pi_a[1].toString()
+                ],
+                b: [
+                    [
+                        newProof.pi_b[0][0].toString(),
+                        newProof.pi_b[0][1].toString()
+                    ],
+                    [
+                        newProof.pi_b[1][0].toString(),
+                        newProof.pi_b[1][1].toString()
+                    ]
+                ],
+                c: [
+                    newProof.pi_c[0].toString(),
+                    newProof.pi_c[1].toString()
+                ]
             },
-            issBase64Details: {
-                value: payload.iss,
-                indexMod4: 0
-            },
-            headerBase64: parsedJWT.raw.header,
-            addressSeed,
-            provingTimeMs: provingTime,
-            provider,
-            keyId: header.kid,
-            publicSignals,
-            debugInfo: {
-                frontendRequest: {
-                    extendedEphemeralPublicKey: `${extendedEphemeralPublicKey.substring(0, 20)}...`,
-                    maxEpoch,
-                    hasJwtRandomness: !!jwtRandomness,
-                    hasSalt: !!salt
-                },
-                circuitInputs: Object.fromEntries(
-                    Object.entries(circuitInputs).map(([key, value]) => [
-                        key, 
-                        Array.isArray(value) ? `[${value.length} elements]` : value
-                    ])
-                )
-            }
+            publicSignals: publicSignals.map(s => s.toString())
+            // Removed all non-essential fields to minimize response size
         };
 
         try {
@@ -795,8 +789,13 @@ app.post('/prove', async (req, res) => {
             // Log that we're about to send the response
             console.log('Sending response to client...');
             
-            // Send response and log completion
-            res.status(200).json(response);
+            // Convert to string manually to ensure proper formatting
+            const jsonString = JSON.stringify(response);
+            console.log('Response size:', jsonString.length, 'bytes');
+            console.log('Response preview:', jsonString.substring(0, 100) + '...');
+            
+            // Send as raw string to avoid any Express JSON transformation
+            res.status(200).send(jsonString);
             console.log('Response sent successfully');
         } catch (responseError) {
             console.error('Error sending response:', responseError);
