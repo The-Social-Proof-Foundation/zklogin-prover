@@ -9,16 +9,48 @@ const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+// Enable CORS with specific options for better connection handling
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true,
+    maxAge: 86400 // 24 hours
+}));
 // Increase request timeout for intensive proof operations
 app.use((req, res, next) => {
     // Set timeout to 120 seconds for proof generation
     req.setTimeout(120000);
     res.setTimeout(120000);
+    
+    // Add connection error handling
+    req.on('error', (err) => {
+        console.error('Request error:', err);
+    });
+    
+    res.on('error', (err) => {
+        console.error('Response error:', err);
+    });
+    
     next();
 });
 // Increase JSON payload limit for JWT and proof data
-app.use(express.json({ limit: '20mb' }));
+app.use(express.json({ 
+    limit: '20mb', 
+    extended: true, 
+    parameterLimit: 100000,
+    verify: (req, res, buf) => {
+        // Store raw body for potential signature verification
+        req.rawBody = buf;
+    }
+}));
+
+// Handle URL-encoded request bodies
+app.use(express.urlencoded({
+    extended: true,
+    limit: '20mb',
+    parameterLimit: 100000
+}));
 
 // OAuth Provider JWK Endpoints
 const OAUTH_PROVIDERS = {
@@ -416,6 +448,14 @@ function extractEphemeralKeyCoordinates(extendedEphemeralPublicKey) {
 }
 
 app.post('/prove', async (req, res) => {
+    // Set up keep-alive to prevent connection termination
+    res.connection.setTimeout(0); // Disable timeout for this connection
+    req.socket.setKeepAlive(true);
+    
+    // Create a timeout promise for the entire operation
+    const operationTimeout = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Operation timed out after 90 seconds')), 90000);
+    });
     try {
         const {
             jwt,
@@ -579,16 +619,25 @@ app.post('/prove', async (req, res) => {
                 throw new Error(`ZKEY file not found at ${zkeyPath}`);
             }
             
+            // Wrap the proof generation in a robust error handling structure
             const result = await Promise.race([
-                snarkjs.groth16.fullProve(
-                    circuitInputs, 
-                    wasmPath, 
-                    zkeyPath
-                ),
-                new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Proof generation timeout after 90 seconds')), 90000)
-                )
+                (async () => {
+                    try {
+                        return await snarkjs.groth16.fullProve(
+                            circuitInputs, 
+                            wasmPath, 
+                            zkeyPath
+                        );
+                    } catch (proofGenError) {
+                        console.error('Proof generation internal error:', proofGenError);
+                        throw new Error(`Proof generation internal error: ${proofGenError.message}`);
+                    }
+                })(),
+                operationTimeout
             ]);
+            
+            // Log progress after proof generation
+            console.log('Proof successfully generated, processing result...');
             
             proof = result.proof;
             publicSignals = result.publicSignals;
@@ -606,6 +655,8 @@ app.post('/prove', async (req, res) => {
         }
 
         // 7. Format response according to zkLogin standard
+        // Ensure all data is properly formatted and stringified
+        // MySoKit expects all numbers as strings
         const response = {
             isValid: true,
             proofPoints: {
@@ -642,17 +693,51 @@ app.post('/prove', async (req, res) => {
             }
         };
 
-        console.log('Response:', response);
-        console.log('=== zkLogin Proof Generation Complete ===');
-        res.json(response);
+        try {
+            // Log a cleaner version of the response to avoid cluttering logs
+            console.log('Response generated with proof points:', {
+                proofPointsA: response.proofPoints.a.map(p => p.substring(0, 10) + '...'),
+                proofPointsB: [[response.proofPoints.b[0][0].substring(0, 10) + '...', response.proofPoints.b[0][1].substring(0, 10) + '...'],
+                                [response.proofPoints.b[1][0].substring(0, 10) + '...', response.proofPoints.b[1][1].substring(0, 10) + '...']],
+                proofPointsC: response.proofPoints.c.map(p => p.substring(0, 10) + '...'),
+                isValid: response.isValid,
+                // Include other important fields but truncate large values
+            });
+            console.log('=== zkLogin Proof Generation Complete ===');
+            
+            // Send response with appropriate headers
+            res.setHeader('Content-Type', 'application/json');
+            res.setHeader('Connection', 'keep-alive');
+            res.status(200).json(response);
+        } catch (responseError) {
+            console.error('Error sending response:', responseError);
+            if (!res.headersSent) {
+                res.status(500).json({
+                    isValid: false,
+                    error: 'Failed to send response',
+                    errorType: 'ResponseError'
+                });
+            }
+        }
 
     } catch (error) {
         console.error('Proof generation error:', error);
-        res.status(400).json({
-            isValid: false,
-            error: error.message,
-            details: error.stack ? error.stack.split('\n').slice(0, 5) : undefined
-        });
+        
+        // Check if client is still connected
+        if (!res.headersSent && res.connection && res.connection.writable) {
+            try {
+                res.status(400).json({
+                    isValid: false,
+                    error: error.message,
+                    errorType: error.name || 'UnknownError',
+                    details: error.stack ? error.stack.split('\n').slice(0, 5) : undefined
+                });
+            } catch (sendError) {
+                console.error('Failed to send error response:', sendError);
+            }
+        } else {
+            console.error('Client connection already closed, could not send error');
+        }
     }
 });
 
