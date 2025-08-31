@@ -10,7 +10,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+// Increase request timeout for intensive proof operations
+app.use((req, res, next) => {
+    // Set timeout to 120 seconds for proof generation
+    req.setTimeout(120000);
+    res.setTimeout(120000);
+    next();
+});
+// Increase JSON payload limit for JWT and proof data
+app.use(express.json({ limit: '20mb' }));
 
 // OAuth Provider JWK Endpoints
 const OAUTH_PROVIDERS = {
@@ -548,30 +556,65 @@ app.post('/prove', async (req, res) => {
         // 6. Generate proof
         console.log('7. Generating proof...');
         
-        const wasmPath = path.join(__dirname, 'build', 'zklogin_mys_js', 'zklogin_mys.wasm');
-        const zkeyPath = path.join(__dirname, 'build', 'zklogin_mys_final.zkey');
+        const wasmPath = path.join(__dirname, 'circuits', 'zklogin_mys_js', 'zklogin_mys.wasm');
+        const zkeyPath = path.join(__dirname, 'keys', 'zklogin_mys_final.zkey');
 
         if (!fs.existsSync(wasmPath) || !fs.existsSync(zkeyPath)) {
             throw new Error('Circuit build files not found. Please run: npm run setup');
         }
 
         const startTime = Date.now();
-        const { proof, publicSignals } = await snarkjs.groth16.fullProve(
-            circuitInputs, 
-            wasmPath, 
-            zkeyPath
-        );
-        const provingTime = Date.now() - startTime;
+        let proof, publicSignals, provingTime;
         
-        console.log(`Proof generated in ${provingTime}ms`);
+        try {
+            console.log('Loading circuit files from:');
+            console.log(`- WASM: ${wasmPath}`);
+            console.log(`- ZKEY: ${zkeyPath}`);
+            
+            if (!fs.existsSync(wasmPath)) {
+                throw new Error(`WASM file not found at ${wasmPath}`);
+            }
+            
+            if (!fs.existsSync(zkeyPath)) {
+                throw new Error(`ZKEY file not found at ${zkeyPath}`);
+            }
+            
+            const result = await Promise.race([
+                snarkjs.groth16.fullProve(
+                    circuitInputs, 
+                    wasmPath, 
+                    zkeyPath
+                ),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Proof generation timeout after 90 seconds')), 90000)
+                )
+            ]);
+            
+            proof = result.proof;
+            publicSignals = result.publicSignals;
+            provingTime = Date.now() - startTime;
+            
+            if (!proof || !proof.pi_a || !proof.pi_b || !proof.pi_c) {
+                console.error('Invalid proof structure:', proof);
+                throw new Error('Generated proof has invalid structure');
+            }
+            
+            console.log(`Proof generated in ${provingTime}ms`);
+        } catch (proofError) {
+            console.error('Proof generation failed:', proofError);
+            throw new Error(`Proof generation failed: ${proofError.message}`);
+        }
 
         // 7. Format response according to zkLogin standard
         const response = {
             isValid: true,
             proofPoints: {
-                a: [proof.pi_a[0], proof.pi_a[1]],
-                b: [[proof.pi_b[0][1], proof.pi_b[0][0]], [proof.pi_b[1][1], proof.pi_b[1][0]]],
-                c: [proof.pi_c[0], proof.pi_c[1]]
+                a: [String(proof.pi_a[0]), String(proof.pi_a[1])],
+                b: [
+                    [String(proof.pi_b[0][1]), String(proof.pi_b[0][0])],
+                    [String(proof.pi_b[1][1]), String(proof.pi_b[1][0])]
+                ],
+                c: [String(proof.pi_c[0]), String(proof.pi_c[1])]
             },
             issBase64Details: {
                 value: payload.iss,
@@ -599,6 +642,7 @@ app.post('/prove', async (req, res) => {
             }
         };
 
+        console.log('Response:', response);
         console.log('=== zkLogin Proof Generation Complete ===');
         res.json(response);
 
