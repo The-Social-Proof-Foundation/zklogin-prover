@@ -706,32 +706,39 @@ app.post('/prove', async (req, res) => {
         console.log('a0:', a0);
         console.log('a1:', a1);
         
-        // Create a minimal response with only essential fields
-        // MySoKit might be timing out due to response size or format
+        // Format response EXACTLY as expected by client
         const response = {
-            isValid: true,
             proofPoints: {
                 a: [
                     newProof.pi_a[0].toString(),
-                    newProof.pi_a[1].toString()
+                    newProof.pi_a[1].toString(),
+                    "1"  // Include the third "1" value as shown in expected format
                 ],
                 b: [
                     [
-                        newProof.pi_b[0][0].toString(),
-                        newProof.pi_b[0][1].toString()
+                        newProof.pi_b[0][1].toString(), // Note: b values are flipped compared to our proof
+                        newProof.pi_b[0][0].toString()
                     ],
                     [
-                        newProof.pi_b[1][0].toString(),
-                        newProof.pi_b[1][1].toString()
+                        newProof.pi_b[1][1].toString(),
+                        newProof.pi_b[1][0].toString()
+                    ],
+                    [
+                        "1",
+                        "0"
                     ]
                 ],
                 c: [
                     newProof.pi_c[0].toString(),
-                    newProof.pi_c[1].toString()
+                    newProof.pi_c[1].toString(),
+                    "1"  // Include the third "1" value as shown in expected format
                 ]
             },
-            publicSignals: publicSignals.map(s => s.toString())
-            // Removed all non-essential fields to minimize response size
+            issBase64Details: {
+                value: payload.iss,
+                indexMod4: 1  // Set to 1 as shown in expected format
+            },
+            headerBase64: parsedJWT.raw.header
         };
 
         try {
