@@ -764,26 +764,11 @@ app.post('/prove', async (req, res) => {
             console.log('a[1] sample:', response.proofPoints.a[1].substring(0, 20) + '...');
             console.log('=== zkLogin Proof Generation Complete ===');
             
-            // Force all proof values to be exactly formatted the way MySoKit expects
-            const cleanResponse = {
-                ...response,
-                // Ensure public signals are also formatted correctly
-                publicSignals: response.publicSignals.map(s => s.toString().replace('e', '').replace('+', ''))
-            };
-            
-            // Log the actual proof points we're sending (first few characters)
-            console.log('DEBUG - Actual proof point values:');
-            console.log(`a[0]: ${response.proofPoints.a[0].substring(0, 30)}...`);
-            console.log(`a[1]: ${response.proofPoints.a[1].substring(0, 30)}...`);
-            console.log(`b[0][0]: ${response.proofPoints.b[0][0].substring(0, 30)}...`);
-            
-            // Serialize response with stringified BigInts
-            const serializedResponse = JSON.stringify(cleanResponse);
-            
-            // Send response with appropriate headers
+            // Send response directly as JSON
+            // This is the simplest approach and might work best with MySoKit
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Connection', 'keep-alive');
-            res.status(200).send(serializedResponse);
+            res.status(200).json(response);
         } catch (responseError) {
             console.error('Error sending response:', responseError);
             if (!res.headersSent) {
