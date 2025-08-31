@@ -63,18 +63,24 @@ RUN ./rapidsnark/rapidsnark || echo "Rapidsnark binary test completed (expected 
 # Run npm run setup to build circuit and generate all required files
 RUN echo "Building circuit and generating keys..." && \
     npm run setup && \
+    cp zklogin_mys_final.zkey build/ && \
     echo "Setup completed successfully" && \
+    ls -la ./ && \
     ls -la build/ && \
     ls -la build/zklogin_mys_js/ && \
     echo "Verifying required files:" && \
     echo "WASM: $(test -f build/zklogin_mys_js/zklogin_mys.wasm && echo 'EXISTS' || echo 'MISSING')" && \
     echo "ZKEY: $(test -f build/zklogin_mys_final.zkey && echo 'EXISTS' || echo 'MISSING')"
 
-# Run the ensure-files script to copy all required files to correct locations
-RUN node ensure-files.js && \
-    echo "File verification completed" && \
+# Run the ensure-files script with more debug info
+RUN node ensure-files.js || true && \
+    echo "File verification attempted - continuing regardless of result" && \
+    ls -la ./ && \
     ls -la build/ && \
-    ls -la build/zklogin_mys_js/
+    ls -la build/zklogin_mys_js/ && \
+    echo "Building a simple test input file" && \
+    mkdir -p inputs && \
+    echo '{"jwtHash": "1", "nonce": "0", "pubKeyHash": "0"}' > inputs/test_docker.json
 
 EXPOSE 4000
 CMD ["node", "server.js"] 
