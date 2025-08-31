@@ -713,22 +713,29 @@ app.post('/prove', async (req, res) => {
         console.log('Raw proof structure:');
         console.log('pi_a:', JSON.stringify(proof.pi_a), `(length: ${proof.pi_a.length})`);
         
-        // Simple direct approach - just use the first two elements of pi_a
+        // SUPER EXPLICIT formatting to match what MySoKit expects
+        // Convert to strings using BigInt for guaranteed exact decimal representation
+        const a0 = BigInt(proof.pi_a[0]).toString(10);
+        const a1 = BigInt(proof.pi_a[1]).toString(10);
+        const b00 = BigInt(proof.pi_b[0][0]).toString(10);
+        const b01 = BigInt(proof.pi_b[0][1]).toString(10);
+        const b10 = BigInt(proof.pi_b[1][0]).toString(10);
+        const b11 = BigInt(proof.pi_b[1][1]).toString(10);
+        const c0 = BigInt(proof.pi_c[0]).toString(10);
+        const c1 = BigInt(proof.pi_c[1]).toString(10);
+        
+        // Log exact values being used
+        console.log('Using exact decimal string values:');
+        console.log('a0:', a0);
+        console.log('a1:', a1);
+        
+        // Construct response with exactly formatted values
         const response = {
             isValid: true,
             proofPoints: {
-                a: [
-                    proof.pi_a[0].toString(),
-                    proof.pi_a[1].toString()
-                ],
-                b: [
-                    [proof.pi_b[0][0].toString(), proof.pi_b[0][1].toString()],
-                    [proof.pi_b[1][0].toString(), proof.pi_b[1][1].toString()]
-                ],
-                c: [
-                    proof.pi_c[0].toString(),
-                    proof.pi_c[1].toString()
-                ]
+                a: [a0, a1],
+                b: [[b00, b01], [b10, b11]],
+                c: [c0, c1]
             },
             issBase64Details: {
                 value: payload.iss,
@@ -764,11 +771,15 @@ app.post('/prove', async (req, res) => {
             console.log('a[1] sample:', response.proofPoints.a[1].substring(0, 20) + '...');
             console.log('=== zkLogin Proof Generation Complete ===');
             
-            // Send response directly as JSON
-            // This is the simplest approach and might work best with MySoKit
+            // Create an EXACT string representation of the response object
+            // This ensures NO manipulation of the values during JSON serialization
+            const serializedJson = JSON.stringify(response);
+            console.log('Final JSON response (first 100 chars):', serializedJson.substring(0, 100) + '...');
+            
+            // Send response as raw JSON string
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Connection', 'keep-alive');
-            res.status(200).json(response);
+            res.status(200).send(serializedJson);
         } catch (responseError) {
             console.error('Error sending response:', responseError);
             if (!res.headersSent) {
