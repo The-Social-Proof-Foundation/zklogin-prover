@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const snarkjs = require('snarkjs');
 const axios = require('axios');
+const { formatProofForMySoKit } = require('./proof_formatter');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -708,21 +709,13 @@ app.post('/prove', async (req, res) => {
         }
 
         // 7. Format response according to zkLogin standard
+        // Use a specialized formatter to ensure proof points are correctly formatted for MySoKit
+        const formattedProofPoints = formatProofForMySoKit(proof);
+        
         // Ensure all data is properly formatted and stringified
-        // MySoKit expects all numbers as strings
         const response = {
             isValid: true,
-            proofPoints: {
-                // MySoKit requires specific BN254 field element formatting
-                // Force all points to be plain strings with no scientific notation
-                // BigInt in MySoKit expects the points in exact decimal string format
-                a: proof.pi_a.map(n => BigInt(n).toString(10)),
-                b: [
-                    proof.pi_b[0].map(n => BigInt(n).toString(10)).reverse(),
-                    proof.pi_b[1].map(n => BigInt(n).toString(10)).reverse()
-                ],
-                c: proof.pi_c.map(n => BigInt(n).toString(10))
-            },
+            proofPoints: formattedProofPoints,
             issBase64Details: {
                 value: payload.iss,
                 indexMod4: 0
@@ -750,15 +743,18 @@ app.post('/prove', async (req, res) => {
         };
 
         try {
-            // Log a cleaner version of the response to avoid cluttering logs
-            console.log('Response generated with proof points:', {
-                proofPointsA: response.proofPoints.a.map(p => p.substring(0, 10) + '...'),
-                proofPointsB: [[response.proofPoints.b[0][0].substring(0, 10) + '...', response.proofPoints.b[0][1].substring(0, 10) + '...'],
-                                [response.proofPoints.b[1][0].substring(0, 10) + '...', response.proofPoints.b[1][1].substring(0, 10) + '...']],
-                proofPointsC: response.proofPoints.c.map(p => p.substring(0, 10) + '...'),
-                isValid: response.isValid,
-                // Include other important fields but truncate large values
-            });
+            // Log full proof structure for debugging
+            console.log('Response generated with proof points:');
+            console.log('a:', JSON.stringify(response.proofPoints.a));
+            console.log('b:', JSON.stringify(response.proofPoints.b));
+            console.log('c:', JSON.stringify(response.proofPoints.c));
+            
+            // Log structure details to verify
+            console.log('a length:', response.proofPoints.a.length);
+            console.log('b length:', response.proofPoints.b.length);
+            console.log('b[0] length:', response.proofPoints.b[0].length);
+            console.log('b[1] length:', response.proofPoints.b[1].length);
+            console.log('c length:', response.proofPoints.c.length);
             console.log('=== zkLogin Proof Generation Complete ===');
             
             // Force all proof values to be exactly formatted the way MySoKit expects
