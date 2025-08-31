@@ -15,13 +15,28 @@ function formatProofForMySoKit(proof) {
   
   // Check the shape of the proof
   console.log('Raw proof structure:');
-  console.log('pi_a:', JSON.stringify(proof.pi_a));
-  console.log('pi_b:', JSON.stringify(proof.pi_b));
-  console.log('pi_c:', JSON.stringify(proof.pi_c));
+  console.log('pi_a:', JSON.stringify(proof.pi_a), `(length: ${proof.pi_a.length})`);
+  console.log('pi_b:', JSON.stringify(proof.pi_b), `(outer length: ${proof.pi_b.length}, inner lengths: ${proof.pi_b[0].length}, ${proof.pi_b[1].length})`);
+  console.log('pi_c:', JSON.stringify(proof.pi_c), `(length: ${proof.pi_c.length})`);
+  
+  // Handle normalization (remove 3rd element from a, if it exists)
+  // MySoKit expects exactly 2 elements in 'a', while snarkjs may return 3
+  const normalizedProof = {
+    pi_a: proof.pi_a.slice(0, 2), // Take only first two elements
+    pi_b: proof.pi_b,
+    pi_c: proof.pi_c
+  };
+  
+  console.log('Normalized proof structure:');
+  console.log('pi_a:', JSON.stringify(normalizedProof.pi_a), `(length: ${normalizedProof.pi_a.length})`);
+  
+  // Use normalized proof from here onwards
+  proof = normalizedProof;
   
   // Ensure proof points are properly formatted
   const formattedProof = {
-    // Format 'a' points - should be exactly 2 points as strings
+    // Format 'a' points - MySoKit expects only the first 2 elements
+    // The 3rd element (typically "1") is a normalization factor not used by MySoKit
     a: [
       proof.pi_a[0].toString(),
       proof.pi_a[1].toString()
