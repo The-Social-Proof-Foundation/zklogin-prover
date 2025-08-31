@@ -714,22 +714,23 @@ app.post('/prove', async (req, res) => {
         console.log('pi_a:', JSON.stringify(proof.pi_a), `(length: ${proof.pi_a.length})`);
         
         // SUPER EXPLICIT formatting to match what MySoKit expects
-        // Convert to strings using BigInt for guaranteed exact decimal representation
-        const a0 = BigInt(proof.pi_a[0]).toString(10);
-        const a1 = BigInt(proof.pi_a[1]).toString(10);
-        const b00 = BigInt(proof.pi_b[0][0]).toString(10);
-        const b01 = BigInt(proof.pi_b[0][1]).toString(10);
-        const b10 = BigInt(proof.pi_b[1][0]).toString(10);
-        const b11 = BigInt(proof.pi_b[1][1]).toString(10);
-        const c0 = BigInt(proof.pi_c[0]).toString(10);
-        const c1 = BigInt(proof.pi_c[1]).toString(10);
+        // Convert directly to numbers first, then to strings
+        // This matches the format expected by MySoKit
+        const a0 = proof.pi_a[0];
+        const a1 = proof.pi_a[1];
+        const b00 = proof.pi_b[0][0];
+        const b01 = proof.pi_b[0][1];
+        const b10 = proof.pi_b[1][0];
+        const b11 = proof.pi_b[1][1];
+        const c0 = proof.pi_c[0];
+        const c1 = proof.pi_c[1];
         
         // Log exact values being used
         console.log('Using exact decimal string values:');
         console.log('a0:', a0);
         console.log('a1:', a1);
         
-        // Construct response with exactly formatted values
+        // Construct response with EXACT format expected by MySoKit
         const response = {
             isValid: true,
             proofPoints: {
@@ -771,15 +772,11 @@ app.post('/prove', async (req, res) => {
             console.log('a[1] sample:', response.proofPoints.a[1].substring(0, 20) + '...');
             console.log('=== zkLogin Proof Generation Complete ===');
             
-            // Create an EXACT string representation of the response object
-            // This ensures NO manipulation of the values during JSON serialization
-            const serializedJson = JSON.stringify(response);
-            console.log('Final JSON response (first 100 chars):', serializedJson.substring(0, 100) + '...');
-            
-            // Send response as raw JSON string
+            // Send the response directly as JSON
+            // Let Express handle the serialization
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Connection', 'keep-alive');
-            res.status(200).send(serializedJson);
+            res.status(200).json(response);
         } catch (responseError) {
             console.error('Error sending response:', responseError);
             if (!res.headersSent) {
