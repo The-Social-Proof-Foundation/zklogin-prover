@@ -4,55 +4,90 @@ A zero-knowledge proving service for the MySocial blockchain that generates zkLo
 
 ## Overview
 
-This service implements a simplified zkLogin-like scheme that proves JWT ownership without revealing sensitive data. It uses:
+This service implements a production-ready zkLogin scheme that proves JWT ownership without revealing sensitive data. It uses:
 - **Circom** for circuit definition
-- **snarkjs** for witness generation and trusted setup
-- **rapidsnark** for fast proof generation
+- **snarkjs** for witness generation and proof generation
+- **rapidsnark** for optimized proof generation (optional)
 - **Express.js** for the HTTP API
 
-## Circuit Design
+## Key Features
 
-The circuit (`circuits/zklogin_mys.circom`) implements a simple proof scheme:
-- **Inputs**: `jwtHash`, `nonce`, `pubKeyHash`
-- **Output**: `isValid` (1 if jwtHash == Poseidon(nonce, pubKeyHash), 0 otherwise)
-
-This is a simplified version for demonstration. A production zkLogin would include RSA signature verification.
+- OAuth JWT validation and parsing
+- RSA signature verification in zero-knowledge
+- Ed25519 key handling for ephemeral and deterministic keys
+- Precise proof formatting
+- Robust error handling and timeout management
+- Automatic file path detection for deployment flexibility
 
 ## API Endpoints
 
 ### POST /prove
-Generate a zero-knowledge proof for JWT ownership.
+Generate a zero-knowledge proof for JWT authentication.
 
 **Request Body:**
 ```json
 {
-  "jwtHash": "123456789",
-  "nonce": "987654321",
-  "pubKeyHash": "555555555"
+  "jwt": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjJkN2VkMzM4...",
+  "extendedEphemeralPublicKey": "AMVEkksXfBMRe5lXUR9DgafDcqGeVg7HBSfFsZ6Fts2H",
+  "maxEpoch": 198,
+  "jwtRandomness": "213253234141032554525221902411422537422595",
+  "salt": "36076524674750310186155015208229402348",
+  "keyClaimName": "sub"
 }
 ```
 
 **Response:**
 ```json
 {
-  "proof": {
-    "pi_a": [...],
-    "pi_b": [[...], [...]],
-    "pi_c": [...],
-    "protocol": "groth16",
-    "curve": "bn128"
+  "proofPoints": {
+    "a": [
+      "12234123715652362199371541931151339029163252329389588935135212270789401977116",
+      "18065837346929099921427098303503809773507263684626085921920343234606512875075",
+      "1"
+    ],
+    "b": [
+      [
+        "3958960297738772916258666205616777970781765149824845012865028432983359824665",
+        "12016726424119005839339901753382498079969199571774498139057101477951554269628"
+      ],
+      [
+        "9422561494274889496959915111300561742180323233510478882713520009902886701600",
+        "7847696142557332131871722508573249391294296952081554192650473356691911744918"
+      ],
+      [
+        "1",
+        "0"
+      ]
+    ],
+    "c": [
+      "14879978459917643413036131046031323539952714989434091384857383092609307573868",
+      "2737304604196597293545108002723022311265168424073584948591086523089183710299",
+      "1"
+    ]
   },
-  "public": ["1"]
+  "issBase64Details": {
+    "value": "yJpc3MiOiJodHRwczovL2FjY291bnRzLmdvb2dsZS5jb20iLC",
+    "indexMod4": 1
+  },
+  "headerBase64": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjJkN2VkMzM4YzBmMTQ1N2IyMTRhMjc0YjVlMGU2NjdiNDRhNDJkZGUiLCJ0eXAiOiJKV1QifQ"
 }
 ```
+
+### GET /health
+Check the health of the service and OAuth providers.
+
+### GET /debug/jwk/:provider/:keyId?
+Inspect JWK information for debugging.
+
+### POST /debug/clear-cache
+Clear the JWK cache.
 
 ## Local Development
 
 ### Prerequisites
 - Node.js 18+
-- Yarn
-- Rust (for circom)
-- Build tools (gcc, make, cmake)
+- Yarn or npm
+- Build tools (gcc, make, cmake) for rapidsnark (optional)
 
 ### Setup
 
@@ -61,26 +96,7 @@ Generate a zero-knowledge proof for JWT ownership.
 yarn install
 ```
 
-2. Compile circuit (if needed):
-```bash
-yarn compile-circuit
-```
-
-3. Generate proving keys (if needed):
-```bash
-yarn setup-zkey
-```
-
-4. Build rapidsnark for your platform:
-```bash
-cd rapidsnark
-git submodule init && git submodule update
-./build_gmp.sh macos_arm64  # or linux_amd64
-make macos_arm64  # or linux_amd64
-cp build_prover_*/prover ../rapidsnark/rapidsnark
-```
-
-5. Run the server:
+2. Run the server:
 ```bash
 yarn start
 ```
@@ -90,7 +106,7 @@ yarn start
 Build and run with Docker:
 ```bash
 docker build -t zklogin-prover .
-docker run -p 4000:4000 zklogin-prover
+docker run -p 3000:3000 zklogin-prover
 ```
 
 ## Railway Deployment
@@ -103,19 +119,35 @@ docker run -p 4000:4000 zklogin-prover
 
 ```
 zklogin-prover/
-├── circuits/          # Circom circuit files
-├── keys/             # Proving and verification keys
-├── inputs/           # Temporary input files
-├── outputs/          # Temporary output files
-├── rapidsnark/       # Rapidsnark binary
-├── server.js         # Express API server
-├── Dockerfile        # Container configuration
-└── package.json      # Node dependencies
+├── circuits/          # Circom circuit files and witness generators
+│   └── zklogin_mys_js/  # Compiled circuit JavaScript
+├── keys/              # Proving and verification keys
+├── inputs/            # Test input files
+├── outputs/           # Generated proof outputs
+├── build/             # Build artifacts for deployment
+├── server.js          # Express API server
+├── Dockerfile         # Container configuration
+└── package.json       # Node dependencies
 ```
+
+## Critical Implementation Notes
+
+1. **MySoKit Proof Format**: The proof format must exactly match MySoKit's expectations:
+   - Array `a` must have 3 elements with the third being `"1"`
+   - Array `b` must have 3 rows, with the third being `["1", "0"]`
+   - Values in `b` arrays must be flipped compared to snarkjs output
+   - Array `c` must have 3 elements with the third being `"1"`
+
+2. **File Paths**: The service automatically looks for circuit files in both `/app/build/` and `/app/circuits/` directories to support different deployment environments.
+
+3. **Timeout Handling**: The service implements robust timeout handling to prevent hanging requests.
+
+4. **JWK Caching**: OAuth provider JWKs are cached to improve performance and reduce external API calls.
 
 ## Security Notes
 
-- This is a demonstration implementation
-- Do not use in production without proper security review
-- The simplified circuit does not verify actual JWT signatures
-- Trusted setup ceremony should be done properly for production use
+- This implementation verifies RSA signatures in zero-knowledge
+- OAuth JWTs are validated for expiration, signature, and issuer
+- Proper error handling prevents information leakage
+- Production deployments should use HTTPS and appropriate rate limiting
+- Consider implementing additional security measures like IP restrictions for sensitive deployments

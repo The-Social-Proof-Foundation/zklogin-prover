@@ -43,15 +43,9 @@ const OAUTH_PROVIDERS = {
         jwksUri: 'https://www.googleapis.com/oauth2/v3/certs',
         issuer: 'https://accounts.google.com'
     },
-    facebook: {
-        name: 'Facebook',
-        oidcConfig: 'https://www.facebook.com/.well-known/oauth/openid-connect/',
-        jwksUri: 'https://www.facebook.com/.well-known/oauth/openid-connect/certs/',
-        issuer: 'https://www.facebook.com'
-    },
     apple: {
         name: 'Apple',
-        oidcConfig: 'https://appleid.apple.com/.well-known/openid_configuration',
+        oidcConfig: 'https://appleid.apple.com/.well-known/openid-configuration',
         jwksUri: 'https://appleid.apple.com/auth/keys',
         issuer: 'https://appleid.apple.com'
     }
