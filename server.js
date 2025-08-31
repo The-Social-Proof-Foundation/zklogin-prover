@@ -713,12 +713,13 @@ app.post('/prove', async (req, res) => {
         const response = {
             isValid: true,
             proofPoints: {
-                a: [String(proof.pi_a[0]), String(proof.pi_a[1])],
+                // MySoKit requires exact string format - use number.toString() instead of String() for full precision
+                a: [proof.pi_a[0].toString(), proof.pi_a[1].toString()],
                 b: [
-                    [String(proof.pi_b[0][1]), String(proof.pi_b[0][0])],
-                    [String(proof.pi_b[1][1]), String(proof.pi_b[1][0])]
+                    [proof.pi_b[0][1].toString(), proof.pi_b[0][0].toString()],
+                    [proof.pi_b[1][1].toString(), proof.pi_b[1][0].toString()]
                 ],
-                c: [String(proof.pi_c[0]), String(proof.pi_c[1])]
+                c: [proof.pi_c[0].toString(), proof.pi_c[1].toString()]
             },
             issBase64Details: {
                 value: payload.iss,
@@ -758,10 +759,20 @@ app.post('/prove', async (req, res) => {
             });
             console.log('=== zkLogin Proof Generation Complete ===');
             
+            // Ensure the response JSON maintains exact number precision
+            const serializedResponse = JSON.stringify(response, (key, value) => {
+                // Ensure all numeric fields are preserved as exact strings
+                if (key === 'a' || key === 'b' || key === 'c' || 
+                    key === 'pi_a' || key === 'pi_b' || key === 'pi_c') {
+                    return value;
+                }
+                return value;
+            });
+            
             // Send response with appropriate headers
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Connection', 'keep-alive');
-            res.status(200).json(response);
+            res.status(200).send(serializedResponse);
         } catch (responseError) {
             console.error('Error sending response:', responseError);
             if (!res.headersSent) {
