@@ -713,30 +713,31 @@ app.post('/prove', async (req, res) => {
         console.log('Raw proof structure:');
         console.log('pi_a:', JSON.stringify(proof.pi_a), `(length: ${proof.pi_a.length})`);
         
-        // SUPER EXPLICIT formatting to match what MySoKit expects
-        // Convert directly to numbers first, then to strings
-        // This matches the format expected by MySoKit
-        const a0 = proof.pi_a[0];
-        const a1 = proof.pi_a[1];
-        const b00 = proof.pi_b[0][0];
-        const b01 = proof.pi_b[0][1];
-        const b10 = proof.pi_b[1][0];
-        const b11 = proof.pi_b[1][1];
-        const c0 = proof.pi_c[0];
-        const c1 = proof.pi_c[1];
+        // FINAL ATTEMPT: Create a completely new proof object with exact structure
+        // MySoKit is extremely picky about the format
+        const newProof = {
+            pi_a: proof.pi_a.slice(0, 2),  // Only take first two elements
+            pi_b: proof.pi_b,
+            pi_c: proof.pi_c
+        };
+        
+        console.log('New proof structure:');
+        console.log('pi_a:', JSON.stringify(newProof.pi_a), `(length: ${newProof.pi_a.length})`);
+        console.log('pi_b:', JSON.stringify(newProof.pi_b));
+        console.log('pi_c:', JSON.stringify(newProof.pi_c));
         
         // Log exact values being used
         console.log('Using exact decimal string values:');
         console.log('a0:', a0);
         console.log('a1:', a1);
         
-        // Construct response with EXACT format expected by MySoKit
+        // Use the new proof object directly
         const response = {
             isValid: true,
             proofPoints: {
-                a: [a0, a1],
-                b: [[b00, b01], [b10, b11]],
-                c: [c0, c1]
+                a: newProof.pi_a,
+                b: newProof.pi_b,
+                c: newProof.pi_c
             },
             issBase64Details: {
                 value: payload.iss,
