@@ -12,25 +12,37 @@ const PORT = process.env.PORT || 3000;
 // Enable CORS with specific options for better connection handling
 app.use(cors({
     origin: '*',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+    exposedHeaders: ['Content-Length', 'Content-Type'],
     credentials: true,
-    maxAge: 86400 // 24 hours
+    maxAge: 86400, // 24 hours
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
 // Increase request timeout for intensive proof operations
 app.use((req, res, next) => {
-    // Set timeout to 120 seconds for proof generation
-    req.setTimeout(120000);
-    res.setTimeout(120000);
+    // Set timeout to 180 seconds for proof generation
+    req.setTimeout(180000);
+    res.setTimeout(180000);
     
-    // Add connection error handling
+    // Set TCP keep-alive to prevent connection drops
+    if (req.socket) {
+        req.socket.setKeepAlive(true);
+        req.socket.setTimeout(0); // Disable socket timeout
+    }
+    
+    // Add connection error handling with detailed logging
     req.on('error', (err) => {
-        console.error('Request error:', err);
+        console.error('Request error:', err.message, err.stack);
     });
     
     res.on('error', (err) => {
-        console.error('Response error:', err);
+        console.error('Response error:', err.message, err.stack);
     });
+    
+    // Log connection info
+    console.log(`New request from ${req.ip || 'unknown'} for ${req.path}`);
     
     next();
 });
@@ -773,11 +785,19 @@ app.post('/prove', async (req, res) => {
             console.log('a[1] sample:', response.proofPoints.a[1].substring(0, 20) + '...');
             console.log('=== zkLogin Proof Generation Complete ===');
             
-            // Send the response directly as JSON
-            // Let Express handle the serialization
+            // Improve response handling to prevent timeouts
+            // Set headers to keep connection alive and prevent timeouts
             res.setHeader('Content-Type', 'application/json');
             res.setHeader('Connection', 'keep-alive');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            
+            // Log that we're about to send the response
+            console.log('Sending response to client...');
+            
+            // Send response and log completion
             res.status(200).json(response);
+            console.log('Response sent successfully');
         } catch (responseError) {
             console.error('Error sending response:', responseError);
             if (!res.headersSent) {
