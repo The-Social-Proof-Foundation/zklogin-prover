@@ -707,33 +707,46 @@ app.post('/prove', async (req, res) => {
         console.log('a0:', a0);
         console.log('a1:', a1);
         
-        // Format response EXACTLY as expected by client
+        // Helper function to convert decimal string to 32-byte big-endian buffer
+        function decimalStringToBytes(decimalStr) {
+            // Convert decimal string to BigInt
+            const bigIntValue = BigInt(decimalStr);
+            
+            // Create a 32-byte buffer
+            const buffer = Buffer.alloc(32);
+            
+            // Convert to big-endian bytes
+            let tempBigInt = bigIntValue;
+            for (let i = 31; i >= 0; i--) {
+                buffer[i] = Number(tempBigInt & BigInt(0xff));
+                tempBigInt = tempBigInt >> BigInt(8);
+            }
+            
+            // Return base64 encoded string
+            return buffer.toString('base64');
+        }
+        
+        // Format response in MySocial protobuf format with 32-byte big-endian elements
         const response = {
             proofPoints: {
-                a: [
-                    newProof.pi_a[0].toString(),
-                    newProof.pi_a[1].toString(),
-                    "1"  // Include the third "1" value as shown in expected format
-                ],
-                b: [
-                    [
-                        newProof.pi_b[0][1].toString(), // Note: b values are flipped compared to our proof
-                        newProof.pi_b[0][0].toString()
-                    ],
-                    [
-                        newProof.pi_b[1][1].toString(),
-                        newProof.pi_b[1][0].toString()
-                    ],
-                    [
-                        "1",
-                        "0"
-                    ]
-                ],
-                c: [
-                    newProof.pi_c[0].toString(),
-                    newProof.pi_c[1].toString(),
-                    "1"  // Include the third "1" value as shown in expected format
-                ]
+                a: {
+                    e0: { element: decimalStringToBytes(newProof.pi_a[0].toString()) },
+                    e1: { element: decimalStringToBytes(newProof.pi_a[1].toString()) },
+                    e2: { element: decimalStringToBytes("1") }
+                },
+                b: {
+                    e00: { element: decimalStringToBytes(newProof.pi_b[0][1].toString()) }, // Note: b values are flipped compared to our proof
+                    e01: { element: decimalStringToBytes(newProof.pi_b[0][0].toString()) },
+                    e10: { element: decimalStringToBytes(newProof.pi_b[1][1].toString()) },
+                    e11: { element: decimalStringToBytes(newProof.pi_b[1][0].toString()) },
+                    e20: { element: decimalStringToBytes("1") },
+                    e21: { element: decimalStringToBytes("0") }
+                },
+                c: {
+                    e0: { element: decimalStringToBytes(newProof.pi_c[0].toString()) },
+                    e1: { element: decimalStringToBytes(newProof.pi_c[1].toString()) },
+                    e2: { element: decimalStringToBytes("1") }
+                }
             },
             issBase64Details: {
                 value: payload.iss,
@@ -744,10 +757,10 @@ app.post('/prove', async (req, res) => {
 
         try {
             // Log simplified version of proof for debugging
-            console.log('Response generated with proof points:');
-            console.log('a length:', response.proofPoints.a.length);
-            console.log('a[0] sample:', response.proofPoints.a[0].substring(0, 20) + '...');
-            console.log('a[1] sample:', response.proofPoints.a[1].substring(0, 20) + '...');
+            console.log('Response generated with proof points in protobuf format:');
+            console.log('a.e0 element length:', response.proofPoints.a.e0.element.length);
+            console.log('a.e0 sample:', response.proofPoints.a.e0.element.substring(0, 20) + '...');
+            console.log('a.e1 sample:', response.proofPoints.a.e1.element.substring(0, 20) + '...');
             console.log('=== zkLogin Proof Generation Complete ===');
             
             // Improve response handling to prevent timeouts
