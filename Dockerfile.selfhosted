@@ -1,7 +1,7 @@
 FROM mysten/zklogin:prover-fe-stable@sha256:4eb3a8276d455e22427145c5d6b70313468b5ec187389dea005b987051a5e0a7 AS fe
 FROM mysten/zklogin:prover-stable@sha256:f699a667d12400ba5c975eac623efd5095e07af25d8252db0fe71b1752e6e609
 
-RUN apt-get update && apt-get install -y --no-install-recommends b2sum ca-certificates \
+RUN apt-get update && apt-get install -y --no-install-recommends coreutils ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY --from=fe / /opt/prover-fe-root
