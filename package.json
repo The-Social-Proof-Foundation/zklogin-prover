@@ -12,7 +12,7 @@
     "circomlib": "^2.0.5"
   },
   "scripts": {
-    "start": "node ensure-files.js && node server.js",
+    "start": "node server.js",
     "test": "node test-circuit.js",
     "build": "mkdir -p build && circom circuits/zklogin_mys.circom --r1cs --wasm --sym -o build/",
     "build-production": "./build-production.sh",

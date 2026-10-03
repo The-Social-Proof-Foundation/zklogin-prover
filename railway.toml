@@ -1,10 +1,10 @@
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "Dockerfile.selfhosted"
 buildCommand = "echo 'Building with extended timeout for key generation'"
 
 [deploy]
-startCommand = "node server.js"
+startCommand = "/run-self-hosted.sh"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
