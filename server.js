@@ -561,7 +561,8 @@ app.post('/prove', async (req, res) => {
         
         const possibleZkeyPaths = [
             path.join(__dirname, 'build', 'zklogin_myso_final.zkey'),
-            path.join(__dirname, 'keys', 'zklogin_myso_final.zkey')
+            path.join(__dirname, 'keys', 'zklogin_myso_final.zkey'),
+            path.join(__dirname, 'zklogin_myso_final.zkey')
         ];
         
         // Find the first available WASM file

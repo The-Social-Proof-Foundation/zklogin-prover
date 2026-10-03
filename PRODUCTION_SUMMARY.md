@@ -40,7 +40,7 @@
 
 ## 🔧 Technical Implementation
 
-### Circuit Architecture (`circuits/zklogin_mys.circom`)
+### Circuit Architecture (`circuits/zklogin_myso.circom`)
 ```
 ZkLoginMYS (Main Circuit)
 ├── RSAVerify (2048-bit RSA signature verification)

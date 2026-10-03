@@ -1,3 +1,7 @@
+# zkLogin proving-key cleanup (2026-10-03)
+
+The local prover now uses the Linux ceremony key `zklogin_myso_final.zkey` at the repo root, `build/`, and `keys/`. All three SHA-256 hashes are `0b892f2a26827ba5cf9fb0ad936596f940d04e5efb7c8f87d23566775865fc2e`. Obsolete `zklogin_mys_final.zkey` and `zklogin_mys_0000.zkey` copies were removed. `server.js` only searches those three `zklogin_myso_final.zkey` paths and uses `build/zklogin_myso_final.zkey` first. The verification key was not modified, and no ceremony was run.
+
 # zkLogin Proving Service - Production Circuit Implementation
 
 ## Background and Motivation
@@ -7,7 +11,7 @@
 
 ### ✅ Completed Components
 
-#### 1. **zkLogin Circuit (circuits/zklogin_mys.circom)**
+#### 1. **zkLogin Circuit (circuits/zklogin_myso.circom)**
 - **RSA-2048 Signature Verification**: Simplified placeholder with proper structure (ready for full implementation)
 - **JWT Nonce Verification**: Poseidon hash verification of ephemeral key + max_epoch + jwt_randomness
 - **Address Derivation**: Proper zkLogin address seed computation

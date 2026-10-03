@@ -8,6 +8,9 @@ node_modules/
 *.wasm
 *.wtns
 *.zkey
+# Obsolete pre-myso proving keys. Never select these.
+zklogin_mys_*.zkey
+**/zklogin_mys_*.zkey
 .env
 
 # Temporary files

@@ -120,8 +120,8 @@ docker run -p 3000:3000 zklogin-prover
 ```
 zklogin-prover/
 ├── circuits/          # Circom circuit files and witness generators
-│   └── zklogin_mys_js/  # Compiled circuit JavaScript
-├── keys/              # Proving and verification keys
+│   └── zklogin_myso.circom
+├── keys/              # Proving key: zklogin_myso_final.zkey
 ├── inputs/            # Test input files
 ├── outputs/           # Generated proof outputs
 ├── build/             # Build artifacts for deployment
