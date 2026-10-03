@@ -7,8 +7,8 @@ console.log('Testing zkLogin circuit compilation and proof generation...');
 
 try {
   // Check if circuit files exist
-  const wasmFile = 'circuits/zklogin_mys_js/zklogin_mys.wasm';
-  const witnessFile = 'circuits/zklogin_mys_js/generate_witness.js';
+  const wasmFile = 'circuits/zklogin_myso_js/zklogin_myso.wasm';
+  const witnessFile = 'circuits/zklogin_myso_js/generate_witness.js';
   
   if (!fs.existsSync(wasmFile)) {
     console.error('❌ WASM file not found:', wasmFile);
@@ -23,7 +23,7 @@ try {
   console.log('✅ Circuit files found');
   
   // Check if required files exist
-  const zkeyFile = 'keys/zklogin_mys_final.zkey';
+  const zkeyFile = 'keys/zklogin_myso_final.zkey';
   const rapidsnarkBinary = 'rapidsnark/rapidsnark';
   const wrapperScript = 'rapidsnark-wrapper.sh';
   
@@ -54,7 +54,7 @@ try {
   
   // Generate witness
   console.log('🔄 Generating witness...');
-  execSync(`node circuits/zklogin_mys_js/generate_witness.js circuits/zklogin_mys_js/zklogin_mys.wasm inputs/test_input.json outputs/test_witness.wtns`);
+  execSync(`node circuits/zklogin_myso_js/generate_witness.js circuits/zklogin_myso_js/zklogin_myso.wasm inputs/test_input.json outputs/test_witness.wtns`);
   console.log('✅ Witness generated successfully');
   
   // Check if witness file was created
@@ -66,7 +66,7 @@ try {
   // Try direct rapidsnark call first to debug
   console.log('🔄 Testing direct rapidsnark call...');
   try {
-    const directCmd = `./rapidsnark/rapidsnark keys/zklogin_mys_final.zkey outputs/test_witness.wtns outputs/test_proof.json outputs/test_public.json`;
+    const directCmd = `./rapidsnark/rapidsnark keys/zklogin_myso_final.zkey outputs/test_witness.wtns outputs/test_proof.json outputs/test_public.json`;
     console.log('Command:', directCmd);
     execSync(directCmd, { stdio: 'inherit' });
     console.log('✅ Direct rapidsnark call succeeded');
@@ -75,7 +75,7 @@ try {
     
     // Generate proof using wrapper
     console.log('🔄 Generating proof with wrapper...');
-    execSync(`./rapidsnark-wrapper.sh keys/zklogin_mys_final.zkey outputs/test_witness.wtns outputs/test_proof.json outputs/test_public.json`, { stdio: 'inherit' });
+    execSync(`./rapidsnark-wrapper.sh keys/zklogin_myso_final.zkey outputs/test_witness.wtns outputs/test_proof.json outputs/test_public.json`, { stdio: 'inherit' });
   }
   
   console.log('✅ Proof generated successfully');

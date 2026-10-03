@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const snarkjs = require('snarkjs');
 const axios = require('axios');
+const { circuitInputsFromRequest } = require('./zklogin-inputs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -427,7 +428,7 @@ function extractEphemeralKeyCoordinates(extendedEphemeralPublicKey) {
 app.post('/prove', async (req, res) => {
     // Create a timeout promise for the entire operation
     const operationTimeout = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error('Operation timed out after 90 seconds')), 90000);
+        setTimeout(() => reject(new Error('Operation timed out after 5 minutes')), 300000);
     });
     
     try {
@@ -534,38 +535,19 @@ app.post('/prove', async (req, res) => {
         }
         const nonceBytes = Buffer.from(nonce, 'base64url');
 
-        // JWT signature
-        const signatureBuffer = Buffer.from(parsedJWT.signature, 'base64url');
-        const signatureChunks = [];
-        for (let i = 0; i < signatureBuffer.length; i += 4) {
-            let chunk = 0;
-            for (let j = 0; j < 4 && i + j < signatureBuffer.length; j++) {
-                chunk |= (signatureBuffer[i + j] << (j * 8));
-            }
-            signatureChunks.push(chunk.toString());
-        }
-        while (signatureChunks.length < 64) {
-            signatureChunks.push('0');
-        }
-
-        // 5. Prepare circuit inputs
         console.log('6. Preparing circuit inputs...');
-        const circuitInputs = {
-            // Public inputs
-            addrSeed: addressSeed,
-            issuerHash: hexToFieldArray(issuerHash.toString('hex')),
+        const headerBase64 = req.body.headerBase64 || parsedJWT.raw.header;
+        const circuitInputs = circuitInputsFromRequest({
+            extendedEphemeralPublicKey,
             maxEpoch: validatedMaxEpoch,
-            jwkModulus: circuitJWK.modulus,
-            jwkExponent: circuitJWK.exponent,
-            
-            // Private inputs
-            jwtHash: hexToFieldArray(jwtHash.toString('hex')),
-            jwtSignature: signatureChunks.slice(0, 64),
-            jwtNonce: hexToFieldArray(nonceBytes.toString('hex')),
-            ephemeralPubKey: [ephemeralPubKey.x, ephemeralPubKey.y],
-            jwtRandomness: validatedJwtRandomness,
-            subjectHash: hexToFieldArray(subjectHash.toString('hex'))
-        };
+            addressSeed: req.body.addressSeed,
+            headerBase64,
+            issBase64Details: req.body.issBase64Details,
+            jwkModulus: jwk.n,
+            jwkExponent: jwk.e,
+            jwtMessage: `${headerBase64}.${parsedJWT.raw.payload}`,
+            jwtSignature: parsedJWT.signature,
+        });
 
         // 6. Generate proof
         console.log('7. Generating proof...');
@@ -573,13 +555,13 @@ app.post('/prove', async (req, res) => {
         // Try multiple possible paths for the files
         let wasmPath, zkeyPath;
         const possibleWasmPaths = [
-            path.join(__dirname, 'build', 'zklogin_mys_js', 'zklogin_mys.wasm'),
-            path.join(__dirname, 'circuits', 'zklogin_mys_js', 'zklogin_mys.wasm')
+            path.join(__dirname, 'build', 'zklogin_myso_js', 'zklogin_myso.wasm'),
+            path.join(__dirname, 'circuits', 'zklogin_myso_js', 'zklogin_myso.wasm')
         ];
         
         const possibleZkeyPaths = [
-            path.join(__dirname, 'build', 'zklogin_mys_final.zkey'),
-            path.join(__dirname, 'keys', 'zklogin_mys_final.zkey')
+            path.join(__dirname, 'build', 'zklogin_myso_final.zkey'),
+            path.join(__dirname, 'keys', 'zklogin_myso_final.zkey')
         ];
         
         // Find the first available WASM file
@@ -619,8 +601,8 @@ app.post('/prove', async (req, res) => {
             console.log('Contents of build directory:');
             console.log(fs.readdirSync(path.join(__dirname, 'build')).join('\n'));
             
-            console.log('Contents of build/zklogin_mys_js directory:');
-            const buildZkloginDir = path.join(__dirname, 'build', 'zklogin_mys_js');
+            console.log('Contents of build/zklogin_myso_js directory:');
+            const buildZkloginDir = path.join(__dirname, 'build', 'zklogin_myso_js');
             if (fs.existsSync(buildZkloginDir)) {
                 console.log(fs.readdirSync(buildZkloginDir).join('\n'));
             } else {
