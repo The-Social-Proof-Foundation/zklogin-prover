@@ -1,3 +1,7 @@
+# Proving profile (2026-10-04)
+
+`snarkjs.groth16.fullProve` is WASM witness calculation, then JavaScript Groth16 (FFT plus five multiexps). Railway testnet `zklogin-prover` logged 78296ms and 81379ms. During the 81s proof the service used about 5–7 of 32 CPUs and about 21–25 GB of 32 GB RAM. JWT prep and response serialization are outside that timer and are not the cost. The next deploy uses rapidsnark v0.0.8 for the Groth16 step only, with the same zkey, WASM witness, and response format. `PROVE_ENGINE=snarkjs` keeps the old prover.
+
 # zkLogin proving-key cleanup (2026-10-03)
 
 The local prover now uses the Linux ceremony key `zklogin_myso_final.zkey` at the repo root, `build/`, and `keys/`. All three SHA-256 hashes are `0b892f2a26827ba5cf9fb0ad936596f940d04e5efb7c8f87d23566775865fc2e`. Obsolete `zklogin_mys_final.zkey` and `zklogin_mys_0000.zkey` copies were removed. `server.js` only searches those three `zklogin_myso_final.zkey` paths and uses `build/zklogin_myso_final.zkey` first. The verification key was not modified, and no ceremony was run.

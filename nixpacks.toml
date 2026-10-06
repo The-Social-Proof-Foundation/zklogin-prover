@@ -1,0 +1,7 @@
+# Fallback if the service builder is Nixpacks instead of Dockerfile.railway.
+# Never compile the circuit or run a trusted setup in this image.
+[phases.build]
+cmds = ["echo 'zklogin prover: no ceremony in the image build'"]
+
+[start]
+cmd = "node server.js"

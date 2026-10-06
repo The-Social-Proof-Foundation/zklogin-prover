@@ -1,0 +1,88 @@
+# Local ceremony image only. Do not use this on Railway — it runs a full trusted setup
+# and times out. Production deploys use Dockerfile.railway plus the keys-storage volume.
+FROM node:18
+
+# Install build dependencies including OpenMP and Circom dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    libgmp-dev \
+    libsodium-dev \
+    nasm \
+    curl \
+    m4 \
+    cmake \
+    libomp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust (required for Circom)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Install Circom
+RUN git clone https://github.com/iden3/circom.git && \
+    cd circom && \
+    cargo build --release && \
+    cargo install --path circom && \
+    cp target/release/circom /usr/local/bin/
+
+# Clone and build rapidsnark with proper flags
+RUN git clone https://github.com/iden3/rapidsnark.git && \
+    cd rapidsnark && \
+    git submodule init && \
+    git submodule update && \
+    ./build_gmp.sh host && \
+    mkdir -p build && \
+    cd build && \
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../package -DUSE_ASM=OFF && \
+    make -j$(nproc) && \
+    make install
+
+WORKDIR /app
+
+# Copy package files first for better caching
+COPY package*.json ./
+RUN yarn install
+
+# Copy the rest of the application
+COPY . .
+
+# Create directories for outputs and ensure rapidsnark directory exists
+RUN mkdir -p inputs outputs keys rapidsnark
+
+# Copy the built rapidsnark binary and ensure it's executable
+RUN cp /rapidsnark/package/bin/prover rapidsnark/rapidsnark && \
+    chmod +x rapidsnark/rapidsnark && \
+    ls -la rapidsnark/ && \
+    echo "Rapidsnark binary setup completed"
+
+# Make the wrapper script executable
+RUN chmod +x rapidsnark-wrapper.sh
+
+# Test that rapidsnark binary is working (should show usage message)
+RUN ./rapidsnark/rapidsnark || echo "Rapidsnark binary test completed (expected to fail without arguments)"
+
+# Run npm run setup to build circuit and generate all required files
+RUN echo "Building circuit and generating keys..." && \
+    npm run setup && \
+    cp zklogin_myso_final.zkey build/zklogin_myso_final.zkey && \
+    echo "Setup completed successfully" && \
+    ls -la ./ && \
+    ls -la build/ && \
+    ls -la build/zklogin_myso_js/ && \
+    echo "Verifying required files:" && \
+    echo "WASM: $(test -f build/zklogin_myso_js/zklogin_myso.wasm && echo 'EXISTS' || echo 'MISSING')" && \
+    echo "ZKEY: $(test -f build/zklogin_myso_final.zkey && echo 'EXISTS' || echo 'MISSING')"
+
+# Run the ensure-files script with more debug info
+RUN node ensure-files.js || true && \
+    echo "File verification attempted - continuing regardless of result" && \
+    ls -la ./ && \
+    ls -la build/ && \
+    ls -la build/zklogin_myso_js/ && \
+    echo "Building a simple test input file" && \
+    mkdir -p inputs && \
+    echo '{"jwtHash": "1", "nonce": "0", "pubKeyHash": "0"}' > inputs/test_docker.json
+
+EXPOSE 4000
+CMD ["node", "server.js"] 

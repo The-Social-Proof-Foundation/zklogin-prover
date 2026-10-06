@@ -103,31 +103,32 @@ yarn start
 
 ## Docker Deployment
 
-Build and run with Docker:
+Railway uses `Dockerfile.railway` (no trusted setup). The ceremony image is local-only:
+
 ```bash
-docker build -t zklogin-prover .
-docker run -p 3000:3000 zklogin-prover
+docker build -f Dockerfile.dev-ceremony -t zklogin-prover-dev .
 ```
+
+Do not point Railway at `Dockerfile.dev-ceremony`.
 
 ## Railway Deployment
 
-1. Push to GitHub
-2. Connect repository to Railway
-3. Railway will automatically build and deploy using the Dockerfile
+Production proves with `zklogin_myso_final.zkey` and the matching WASM on the `keys-storage` volume mounted at `/app/keys`. The process exits before it listens if either SHA-256 does not match. See [docs/RAILWAY_DEPLOY.md](docs/RAILWAY_DEPLOY.md).
+
+The same zkey is the localnet verifying key documented in myso-core (`docs/content/guides/developer/cryptography/zklogin-integration.mdx`, SHA-256 `0b892f2a26827ba5cf9fb0ad936596f940d04e5efb7c8f87d23566775865fc2e`).
 
 ## Project Structure
 
 ```
 zklogin-prover/
-├── circuits/          # Circom circuit files and witness generators
+├── circuits/          # Circom circuit files
 │   └── zklogin_myso.circom
-├── keys/              # Proving key: zklogin_myso_final.zkey
-├── inputs/            # Test input files
-├── outputs/           # Generated proof outputs
-├── build/             # Build artifacts for deployment
+├── keys/              # Volume layout: zkey + zklogin_myso_js/zklogin_myso.wasm
 ├── server.js          # Express API server
-├── Dockerfile         # Container configuration
-└── package.json       # Node dependencies
+├── verify-prover-artifacts.js
+├── Dockerfile.railway # Production image (no ceremony)
+├── Dockerfile.dev-ceremony
+└── package.json
 ```
 
 ## Critical Implementation Notes
@@ -138,7 +139,7 @@ zklogin-prover/
    - Values in `b` arrays must be flipped compared to snarkjs output
    - Array `c` must have 3 elements with the third being `"1"`
 
-2. **File Paths**: The service automatically looks for circuit files in both `/app/build/` and `/app/circuits/` directories to support different deployment environments.
+2. **File Paths**: Startup loads only `keys/zklogin_myso_final.zkey` and `keys/zklogin_myso_js/zklogin_myso.wasm` (override with `ZKEY_PATH` and `WASM_PATH`) and checks their SHA-256 before listening.
 
 3. **Timeout Handling**: The service implements robust timeout handling to prevent hanging requests.
 

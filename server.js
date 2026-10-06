@@ -3,9 +3,10 @@ const cors = require('cors');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const snarkjs = require('snarkjs');
 const axios = require('axios');
 const { circuitInputsFromRequest } = require('./zklogin-inputs');
+const { verifyProverArtifacts } = require('./verify-prover-artifacts');
+const { proveGroth16 } = require('./groth16-prove');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,9 +14,10 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 // Increase request timeout for intensive proof operations
 app.use((req, res, next) => {
-    // Set timeout to 120 seconds for proof generation
-    req.setTimeout(120000);
-    res.setTimeout(120000);
+    // Groth16 on zklogin_myso_final.zkey takes about 90s. A 120s socket timeout
+    // drops the client while the proof is still running.
+    req.setTimeout(300000);
+    res.setTimeout(300000);
     next();
 });
 // Increase JSON payload limit for JWT and proof data
@@ -432,6 +434,7 @@ app.post('/prove', async (req, res) => {
     });
     
     try {
+        const requestStarted = Date.now();
         const {
             jwt,
             extendedEphemeralPublicKey,
@@ -549,120 +552,72 @@ app.post('/prove', async (req, res) => {
             jwtSignature: parsedJWT.signature,
         });
 
-        // 6. Generate proof
+        const prepMs = Date.now() - requestStarted;
         console.log('7. Generating proof...');
-        
-        // Try multiple possible paths for the files
-        let wasmPath, zkeyPath;
-        const possibleWasmPaths = [
-            path.join(__dirname, 'build', 'zklogin_myso_js', 'zklogin_myso.wasm'),
-            path.join(__dirname, 'circuits', 'zklogin_myso_js', 'zklogin_myso.wasm')
-        ];
-        
-        const possibleZkeyPaths = [
-            path.join(__dirname, 'build', 'zklogin_myso_final.zkey'),
-            path.join(__dirname, 'keys', 'zklogin_myso_final.zkey'),
-            path.join(__dirname, 'zklogin_myso_final.zkey')
-        ];
-        
-        // Find the first available WASM file
-        for (const wPath of possibleWasmPaths) {
-            if (fs.existsSync(wPath)) {
-                wasmPath = wPath;
-                console.log(`Found WASM file at: ${wasmPath}`);
-                break;
-            }
-        }
-        
-        // Find the first available ZKEY file
-        for (const zPath of possibleZkeyPaths) {
-            if (fs.existsSync(zPath)) {
-                zkeyPath = zPath;
-                console.log(`Found ZKEY file at: ${zkeyPath}`);
-                break;
-            }
-        }
-
-        if (!wasmPath) {
-            console.error('WASM file not found in any of the expected locations.');
-            console.log('Searched in:');
-            possibleWasmPaths.forEach(p => console.log(` - ${p}`));
-            throw new Error('WASM file not found. Please run: npm run setup');
-        }
-        
-        if (!zkeyPath) {
-            console.error('ZKEY file not found in any of the expected locations.');
-            console.log('Searched in:');
-            possibleZkeyPaths.forEach(p => console.log(` - ${p}`));
-            throw new Error('ZKEY file not found. Please run: npm run setup');
-        }
-        
-        // Log all files in the directories for debugging
-        try {
-            console.log('Contents of build directory:');
-            console.log(fs.readdirSync(path.join(__dirname, 'build')).join('\n'));
-            
-            console.log('Contents of build/zklogin_myso_js directory:');
-            const buildZkloginDir = path.join(__dirname, 'build', 'zklogin_myso_js');
-            if (fs.existsSync(buildZkloginDir)) {
-                console.log(fs.readdirSync(buildZkloginDir).join('\n'));
-            } else {
-                console.log('Directory does not exist');
-            }
-        } catch (dirError) {
-            console.error('Error listing directories:', dirError);
-        }
-
-        const startTime = Date.now();
-        let proof, publicSignals, provingTime;
+        const {
+            wasmPath,
+            zkeyPath,
+            witnessBinPath,
+            witnessDatPath,
+            witnessEngine,
+        } = proverArtifacts;
+        let proof, publicSignals, proveProfile;
         
         try {
             console.log('Loading circuit files from:');
-            console.log(`- WASM: ${wasmPath}`);
             console.log(`- ZKEY: ${zkeyPath}`);
-            
-            if (!fs.existsSync(wasmPath)) {
-                throw new Error(`WASM file not found at ${wasmPath}`);
+            console.log(`- WITNESS_ENGINE: ${witnessEngine}`);
+            if (witnessEngine === 'cpp') {
+                console.log(`- WITNESS_BIN: ${witnessBinPath}`);
+                console.log(`- WITNESS_DAT: ${witnessDatPath}`);
+            } else {
+                console.log(`- WASM: ${wasmPath}`);
             }
             
             if (!fs.existsSync(zkeyPath)) {
                 throw new Error(`ZKEY file not found at ${zkeyPath}`);
             }
+            if (witnessEngine === 'cpp') {
+                if (!fs.existsSync(witnessBinPath)) {
+                    throw new Error(`Witness binary not found at ${witnessBinPath}`);
+                }
+                if (!fs.existsSync(witnessDatPath)) {
+                    throw new Error(`Witness .dat not found at ${witnessDatPath}`);
+                }
+            } else if (!fs.existsSync(wasmPath)) {
+                throw new Error(`WASM file not found at ${wasmPath}`);
+            }
             
-            // Wrap the proof generation in a robust error handling structure
+            // Witness (C++ or WASM) then Groth16. Rapidsnark, when present, replaces only Groth16.
             const result = await Promise.race([
-                (async () => {
-                    try {
-                        return await snarkjs.groth16.fullProve(
-                            circuitInputs, 
-                            wasmPath, 
-                            zkeyPath
-                        );
-                    } catch (proofGenError) {
-                        console.error('Proof generation internal error:', proofGenError);
-                        throw new Error(`Proof generation internal error: ${proofGenError.message}`);
-                    }
-                })(),
+                proveGroth16({
+                    input: circuitInputs,
+                    wasmPath,
+                    zkeyPath,
+                    witnessBinPath,
+                    witnessEngine,
+                }),
                 operationTimeout
             ]);
             
-            // Log progress after proof generation
             console.log('Proof successfully generated, processing result...');
             
             proof = result.proof;
             publicSignals = result.publicSignals;
-            provingTime = Date.now() - startTime;
+            proveProfile = result.profile;
             
             if (!proof || !proof.pi_a || !proof.pi_b || !proof.pi_c) {
                 console.error('Invalid proof structure:', proof);
                 throw new Error('Generated proof has invalid structure');
             }
             
-            console.log(`Proof generated in ${provingTime}ms`);
+            console.log(`Proof generated in ${proveProfile.witnessMs + proveProfile.proveMs}ms`);
         } catch (proofError) {
             console.error('Proof generation failed:', proofError);
             throw new Error(`Proof generation failed: ${proofError.message}`);
         }
+
+        const serializeStarted = Date.now();
 
         // 7. Format response according to zkLogin standard
         // CRITICAL: MySoKit expects only 2 elements in pi_a, but snarkjs generates 3
@@ -758,8 +713,30 @@ app.post('/prove', async (req, res) => {
             
             // Convert to string manually to ensure proper formatting
             const jsonString = JSON.stringify(response);
+            const serializeMs = Date.now() - serializeStarted;
             console.log('Response size:', jsonString.length, 'bytes');
             console.log('Response preview:', jsonString.substring(0, 100) + '...');
+            console.log('[prove-profile]', JSON.stringify({
+                prepMs,
+                witnessMs: proveProfile.witnessMs,
+                proveMs: proveProfile.proveMs,
+                serializeMs,
+                totalMs: Date.now() - requestStarted,
+                engine: proveProfile.engine,
+                witnessEngine: proveProfile.witnessEngine,
+                witnessBin: proveProfile.witnessBin,
+                phases: proveProfile.phases,
+                rssMbBefore: proveProfile.rssMbBefore,
+                rssMbAfterWitness: proveProfile.rssMbAfterWitness,
+                rssMbAfterProve: proveProfile.rssMbAfterProve,
+                heapMbAfterProve: proveProfile.heapMbAfterProve,
+                freeMbAfterProve: proveProfile.freeMbAfterProve,
+                totalMb: proveProfile.totalMb,
+                cores: proveProfile.cores,
+                cpuUserMs: proveProfile.cpuUserMs,
+                cpuSystemMs: proveProfile.cpuSystemMs,
+                publicSignals: Array.isArray(publicSignals) ? publicSignals.length : null,
+            }));
             
             // Send as raw string to avoid any Express JSON transformation
             res.status(200).send(jsonString);
@@ -796,34 +773,8 @@ app.post('/prove', async (req, res) => {
     }
 });
 
-// Health check endpoint with provider status
-app.get('/health', async (req, res) => {
-    const providerStatus = {};
-    
-    for (const [provider, config] of Object.entries(OAUTH_PROVIDERS)) {
-        try {
-            const response = await axios.get(config.oidcConfig, { timeout: 5000 });
-            providerStatus[provider] = {
-                status: 'online',
-                jwksUri: response.data.jwks_uri || config.jwksUri
-            };
-        } catch (error) {
-            providerStatus[provider] = {
-                status: 'offline',
-                error: error.message
-            };
-        }
-    }
-
-    res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        providers: providerStatus,
-        cacheStats: {
-            cachedJWKs: jwkCache.size,
-            memoryUsage: process.memoryUsage()
-        }
-    });
+app.get('/health', (_req, res) => {
+    res.json({ status: 'ok', artifactsVerified: true });
 });
 
 // Debug endpoint for JWK inspection
@@ -858,12 +809,19 @@ app.post('/debug/clear-cache', (req, res) => {
     res.json({ message: 'JWK cache cleared', timestamp: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-    console.log(`🚀 zkLogin proving server running on port ${PORT}`);
-    console.log(`📚 Available endpoints:`);
-    console.log(`   POST /prove - Generate zkLogin proof`);
-    console.log(`   GET  /health - Server and provider status`);
-    console.log(`   GET  /debug/jwk/:provider/:keyId? - JWK inspection`);
-    console.log(`   POST /debug/clear-cache - Clear JWK cache`);
-    console.log(`🔒 Supported OAuth providers: ${Object.keys(OAUTH_PROVIDERS).join(', ')}`);
-});
+let proverArtifacts;
+
+verifyProverArtifacts()
+    .then((artifacts) => {
+        proverArtifacts = artifacts;
+        app.listen(PORT, () => {
+            console.log(`zkLogin proving server running on port ${PORT}`);
+            console.log('POST /prove');
+            console.log('GET  /health');
+            console.log(`Supported OAuth providers: ${Object.keys(OAUTH_PROVIDERS).join(', ')}`);
+        });
+    })
+    .catch((err) => {
+        console.error('[zklogin-prover] artifact verification failed', err);
+        process.exit(1);
+    });

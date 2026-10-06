@@ -1,6 +1,5 @@
 # Trixie ships libstdc++ with GLIBCXX_3.4.32. node:18-slim is Bookworm and
 # stops at GLIBCXX_3.4.30, so rapidsnark 0.0.8 refuses to start.
-# Railway auto-detects this file; keep it in sync with Dockerfile.railway.
 FROM node:22-trixie-slim
 
 RUN apt-get update && apt-get install -y \

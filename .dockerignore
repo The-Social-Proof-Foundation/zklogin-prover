@@ -1,0 +1,14 @@
+node_modules
+.git
+*.zkey
+*.wasm
+*.ptau
+*.r1cs
+*.wtns
+*.sym
+build
+keys
+inputs
+outputs
+*.log
+.env

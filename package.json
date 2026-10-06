@@ -12,7 +12,7 @@
     "circomlib": "^2.0.5"
   },
   "scripts": {
-    "start": "node ensure-files.js && node server.js",
+    "start": "node server.js",
     "test": "node test-circuit.js",
     "build": "mkdir -p build && circom circuits/zklogin_myso.circom --r1cs --wasm --sym -o build/",
     "build-production": "./build-production.sh",
@@ -20,7 +20,7 @@
     "setup-zkey": "snarkjs powersoftau new bn128 22 pot22_0000.ptau && snarkjs powersoftau contribute pot22_0000.ptau pot22_0001.ptau --name='Initial contribution' -v -e='random entropy' && snarkjs powersoftau prepare phase2 pot22_0001.ptau pot22_final.ptau -v && snarkjs groth16 setup build/zklogin_myso.r1cs pot22_final.ptau zklogin_myso_0000.zkey && snarkjs zkey contribute zklogin_myso_0000.zkey zklogin_myso_final.zkey --name='Final contribution' -v -e='final random entropy'",
     "export-vkey": "snarkjs zkey export verificationkey zklogin_myso_final.zkey zklogin_myso_final.vkey.json",
     "verify-build": "ls -la build/ && ls -la build/zklogin_myso_js/ && echo 'Build verification complete'",
-    "verify-files": "node ensure-files.js",
+    "verify-files": "node verify-prover-artifacts.js",
     "dev": "npm run build-production && npm run verify-files && PORT=3001 node server.js"
   },
   "description": "Production-ready zkLogin proving service with RSA signature verification and real OAuth JWK integration",

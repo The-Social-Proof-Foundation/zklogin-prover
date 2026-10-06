@@ -11,6 +11,10 @@ node_modules/
 # Obsolete pre-myso proving keys. Never select these.
 zklogin_mys_*.zkey
 **/zklogin_mys_*.zkey
+# Circom C++ witness binary + .dat. Seed via Railway volume, not git.
+circuits/zklogin_myso_cpp/zklogin_myso
+circuits/zklogin_myso_cpp/zklogin_myso.dat
+circuits/**/zklogin_myso
 .env
 
 # Temporary files
