@@ -5,26 +5,20 @@ const { spawn } = require('child_process')
 const snarkjs = require('snarkjs')
 
 /**
- * Witness defaults to Circom C++ (zklogin_myso + zklogin_myso.dat).
- * WITNESS_ENGINE=wasm falls back to snarkjs WASM.
- * Rapidsnark (when present) replaces only the Groth16 multiexp step.
+ * Default: hot rapidsnark proverServer on loopback (same container).
+ * PROVE_ENGINE=snarkjs uses local WASM witness + snarkjs Groth16 (dev escape only).
+ * No cold CLI rapidsnark spawn — that remaps the 1.2GB zkey every prove.
  */
-function rapidsnarkBinary() {
-  if (process.env.PROVE_ENGINE === 'snarkjs') return null
-  const candidates = [
-    process.env.RAPIDSNARK_BIN,
-    path.join(__dirname, 'rapidsnark', 'rapidsnark'),
-    '/usr/local/bin/rapidsnark',
-  ].filter(Boolean)
-  for (const bin of candidates) {
-    try {
-      fs.accessSync(bin, fs.constants.X_OK)
-      return bin
-    } catch {
-      // try the next location
-    }
-  }
-  return null
+
+function resolveProveEngine() {
+  const raw = (process.env.PROVE_ENGINE || 'proverServer').trim().toLowerCase()
+  if (raw === 'snarkjs') return 'snarkjs'
+  return 'proverServer'
+}
+
+function resolveProverServerUrl() {
+  const url = (process.env.RAPIDSNARK_SERVER_URL || 'http://127.0.0.1:8080').trim()
+  return url.replace(/\/$/, '')
 }
 
 function resolveWitnessEngine(explicit) {
@@ -109,10 +103,6 @@ function runChild(bin, args) {
   })
 }
 
-function runRapidsnark(bin, zkeyPath, wtnsPath, proofPath, publicPath) {
-  return runChild(bin, [zkeyPath, wtnsPath, proofPath, publicPath])
-}
-
 /**
  * Circom main.cpp loads `${argv[0]}.dat`, so witnessBinPath must be absolute
  * and zklogin_myso.dat must sit beside the binary.
@@ -122,6 +112,29 @@ function runCppWitness(witnessBinPath, inputPath, wtnsPath) {
   return runChild(bin, [inputPath, wtnsPath])
 }
 
+async function proveViaProverServer(input, serverUrl) {
+  const body = JSON.stringify(circuitInputForCpp(input))
+  const res = await fetch(`${serverUrl}/input`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  })
+  const text = await res.text()
+  if (!res.ok) {
+    throw new Error(`proverServer ${res.status}: ${text.slice(0, 2000)}`)
+  }
+  let proof
+  try {
+    proof = JSON.parse(text)
+  } catch {
+    throw new Error(`proverServer returned non-JSON: ${text.slice(0, 500)}`)
+  }
+  if (!proof || !proof.pi_a || !proof.pi_b || !proof.pi_c) {
+    throw new Error('proverServer returned a proof without pi_a, pi_b, and pi_c')
+  }
+  return proof
+}
+
 async function proveGroth16({
   input,
   wasmPath,
@@ -129,79 +142,101 @@ async function proveGroth16({
   witnessBinPath,
   witnessEngine: witnessEngineOpt,
 }) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zklogin-prove-'))
-  const inputPath = path.join(dir, 'input.json')
-  const wtnsPath = path.join(dir, 'witness.wtns')
-  const proofPath = path.join(dir, 'proof.json')
-  const publicPath = path.join(dir, 'public.json')
   const before = sampleResources()
   const phases = []
   let witnessMs = 0
   let proveMs = 0
-  let engine = 'snarkjs'
+  const engine = resolveProveEngine()
   const witnessEngine = resolveWitnessEngine(witnessEngineOpt)
-  const bin = rapidsnarkBinary()
+  const serverUrl = resolveProverServerUrl()
 
   try {
-    const witnessStart = Date.now()
-    if (witnessEngine === 'cpp') {
-      if (!witnessBinPath) {
-        throw new Error('WITNESS_BIN / witnessBinPath is required when WITNESS_ENGINE=cpp')
+    if (engine === 'proverServer') {
+      // Witness + Groth16 run inside the hot process (zkey already resident).
+      const proveStart = Date.now()
+      const proof = await proveViaProverServer(input, serverUrl)
+      proveMs = Date.now() - proveStart
+      const afterProve = sampleResources()
+      return {
+        proof,
+        publicSignals: [],
+        profile: {
+          witnessMs: 0,
+          proveMs,
+          engine: 'proverServer',
+          witnessEngine: 'cpp',
+          witnessBin: null,
+          proverServerUrl: serverUrl,
+          phases,
+          rssMbBefore: before.rssMb,
+          rssMbAfterWitness: before.rssMb,
+          rssMbAfterProve: afterProve.rssMb,
+          heapMbAfterProve: afterProve.heapMb,
+          freeMbAfterProve: afterProve.freeMb,
+          totalMb: afterProve.totalMb,
+          cores: afterProve.cores,
+          cpuUserMs: Math.round((afterProve.cpuUserUs - before.cpuUserUs) / 1000),
+          cpuSystemMs: Math.round((afterProve.cpuSystemUs - before.cpuSystemUs) / 1000),
+        },
       }
-      fs.writeFileSync(inputPath, JSON.stringify(circuitInputForCpp(input)))
-      await runCppWitness(witnessBinPath, inputPath, wtnsPath)
-    } else {
-      if (!wasmPath) {
-        throw new Error('WASM_PATH is required when WITNESS_ENGINE=wasm')
-      }
-      await snarkjs.wtns.calculate(input, wasmPath, wtnsPath)
     }
-    witnessMs = Date.now() - witnessStart
-    const afterWitness = sampleResources()
 
-    const proveStart = Date.now()
-    let proof
-    let publicSignals
-    if (bin) {
-      engine = 'rapidsnark'
-      await runRapidsnark(bin, zkeyPath, wtnsPath, proofPath, publicPath)
-      proof = JSON.parse(fs.readFileSync(proofPath, 'utf8'))
-      publicSignals = JSON.parse(fs.readFileSync(publicPath, 'utf8'))
-    } else {
+    // PROVE_ENGINE=snarkjs — local escape hatch only (cold zkey in Node).
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zklogin-prove-'))
+    const inputPath = path.join(dir, 'input.json')
+    const wtnsPath = path.join(dir, 'witness.wtns')
+    try {
+      const witnessStart = Date.now()
+      if (witnessEngine === 'cpp') {
+        if (!witnessBinPath) {
+          throw new Error('WITNESS_BIN / witnessBinPath is required when WITNESS_ENGINE=cpp')
+        }
+        fs.writeFileSync(inputPath, JSON.stringify(circuitInputForCpp(input)))
+        await runCppWitness(witnessBinPath, inputPath, wtnsPath)
+      } else {
+        if (!wasmPath) {
+          throw new Error('WASM_PATH is required when WITNESS_ENGINE=wasm')
+        }
+        await snarkjs.wtns.calculate(input, wasmPath, wtnsPath)
+      }
+      witnessMs = Date.now() - witnessStart
+      const afterWitness = sampleResources()
+
+      const proveStart = Date.now()
       const logger = phaseLogger(phases)
       const result = await snarkjs.groth16.prove(zkeyPath, wtnsPath, logger)
       logger.finish()
-      proof = result.proof
-      publicSignals = result.publicSignals
-    }
-    proveMs = Date.now() - proveStart
-    const afterProve = sampleResources()
+      proveMs = Date.now() - proveStart
+      const afterProve = sampleResources()
 
-    if (!proof || !proof.pi_a || !proof.pi_b || !proof.pi_c) {
-      throw new Error(`${engine} returned a proof without pi_a, pi_b, and pi_c`)
-    }
+      if (!result.proof || !result.proof.pi_a || !result.proof.pi_b || !result.proof.pi_c) {
+        throw new Error('snarkjs returned a proof without pi_a, pi_b, and pi_c')
+      }
 
-    return {
-      proof,
-      publicSignals,
-      profile: {
-        witnessMs,
-        proveMs,
-        engine,
-        witnessEngine,
-        witnessBin: witnessEngine === 'cpp' ? witnessBinPath : null,
-        rapidsnarkBin: bin,
-        phases,
-        rssMbBefore: before.rssMb,
-        rssMbAfterWitness: afterWitness.rssMb,
-        rssMbAfterProve: afterProve.rssMb,
-        heapMbAfterProve: afterProve.heapMb,
-        freeMbAfterProve: afterProve.freeMb,
-        totalMb: afterProve.totalMb,
-        cores: afterProve.cores,
-        cpuUserMs: Math.round((afterProve.cpuUserUs - before.cpuUserUs) / 1000),
-        cpuSystemMs: Math.round((afterProve.cpuSystemUs - before.cpuSystemUs) / 1000),
-      },
+      return {
+        proof: result.proof,
+        publicSignals: result.publicSignals,
+        profile: {
+          witnessMs,
+          proveMs,
+          engine: 'snarkjs',
+          witnessEngine,
+          witnessBin: witnessEngine === 'cpp' ? witnessBinPath : null,
+          proverServerUrl: null,
+          phases,
+          rssMbBefore: before.rssMb,
+          rssMbAfterWitness: afterWitness.rssMb,
+          rssMbAfterProve: afterProve.rssMb,
+          heapMbAfterProve: afterProve.heapMb,
+          freeMbAfterProve: afterProve.freeMb,
+          totalMb: afterProve.totalMb,
+          cores: afterProve.cores,
+          cpuUserMs: Math.round((afterProve.cpuUserUs - before.cpuUserUs) / 1000),
+          cpuSystemMs: Math.round((afterProve.cpuSystemUs - before.cpuSystemUs) / 1000),
+        },
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
     }
   } catch (err) {
     console.error(
@@ -212,15 +247,19 @@ async function proveGroth16({
         engine,
         witnessEngine,
         witnessBin: witnessBinPath || null,
-        rapidsnarkBin: bin,
+        proverServerUrl: engine === 'proverServer' ? serverUrl : null,
         rssMb: sampleResources().rssMb,
         error: err.message,
       })
     )
     throw err
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
   }
 }
 
-module.exports = { proveGroth16, rapidsnarkBinary, resolveWitnessEngine }
+module.exports = {
+  proveGroth16,
+  resolveProveEngine,
+  resolveProverServerUrl,
+  resolveWitnessEngine,
+  circuitInputForCpp,
+}

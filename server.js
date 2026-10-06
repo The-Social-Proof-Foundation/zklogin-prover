@@ -564,31 +564,42 @@ app.post('/prove', async (req, res) => {
         let proof, publicSignals, proveProfile;
         
         try {
-            console.log('Loading circuit files from:');
-            console.log(`- ZKEY: ${zkeyPath}`);
-            console.log(`- WITNESS_ENGINE: ${witnessEngine}`);
-            if (witnessEngine === 'cpp') {
-                console.log(`- WITNESS_BIN: ${witnessBinPath}`);
-                console.log(`- WITNESS_DAT: ${witnessDatPath}`);
+            const proveEngineName = proverArtifacts.proveEngine || 'proverServer';
+            const serverUrl = proverArtifacts.proverServerUrl || 'http://127.0.0.1:8080';
+            console.log('Proving via:');
+            console.log(`- PROVE_ENGINE: ${proveEngineName}`);
+            if (proveEngineName === 'proverServer') {
+                console.log(`- RAPIDSNARK_SERVER_URL: ${serverUrl} (loopback; zkey already hot in proverServer)`);
+                console.log(`- WITNESS: C++ inside proverServer (zkLogin symlink)`);
             } else {
-                console.log(`- WASM: ${wasmPath}`);
-            }
-            
-            if (!fs.existsSync(zkeyPath)) {
-                throw new Error(`ZKEY file not found at ${zkeyPath}`);
-            }
-            if (witnessEngine === 'cpp') {
-                if (!fs.existsSync(witnessBinPath)) {
-                    throw new Error(`Witness binary not found at ${witnessBinPath}`);
+                console.log(`- ZKEY: ${zkeyPath}`);
+                console.log(`- WITNESS_ENGINE: ${witnessEngine}`);
+                if (witnessEngine === 'cpp') {
+                    console.log(`- WITNESS_BIN: ${witnessBinPath}`);
+                    console.log(`- WITNESS_DAT: ${witnessDatPath}`);
+                } else {
+                    console.log(`- WASM: ${wasmPath}`);
                 }
-                if (!fs.existsSync(witnessDatPath)) {
-                    throw new Error(`Witness .dat not found at ${witnessDatPath}`);
-                }
-            } else if (!fs.existsSync(wasmPath)) {
-                throw new Error(`WASM file not found at ${wasmPath}`);
             }
-            
-            // Witness (C++ or WASM) then Groth16. Rapidsnark, when present, replaces only Groth16.
+
+            if (proveEngineName !== 'proverServer') {
+                if (!fs.existsSync(zkeyPath)) {
+                    throw new Error(`ZKEY file not found at ${zkeyPath}`);
+                }
+                if (witnessEngine === 'cpp') {
+                    if (!fs.existsSync(witnessBinPath)) {
+                        throw new Error(`Witness binary not found at ${witnessBinPath}`);
+                    }
+                    if (!fs.existsSync(witnessDatPath)) {
+                        throw new Error(`Witness .dat not found at ${witnessDatPath}`);
+                    }
+                } else if (!fs.existsSync(wasmPath)) {
+                    throw new Error(`WASM file not found at ${wasmPath}`);
+                }
+            }
+
+            // Hot path: Node POSTs circuit JSON to localhost proverServer (zkey resident).
+            // Escape: PROVE_ENGINE=snarkjs uses local witness + snarkjs Groth16.
             const result = await Promise.race([
                 proveGroth16({
                     input: circuitInputs,
@@ -725,6 +736,7 @@ app.post('/prove', async (req, res) => {
                 engine: proveProfile.engine,
                 witnessEngine: proveProfile.witnessEngine,
                 witnessBin: proveProfile.witnessBin,
+                proverServerUrl: proveProfile.proverServerUrl || null,
                 phases: proveProfile.phases,
                 rssMbBefore: proveProfile.rssMbBefore,
                 rssMbAfterWitness: proveProfile.rssMbAfterWitness,

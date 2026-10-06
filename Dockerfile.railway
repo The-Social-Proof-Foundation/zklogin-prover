@@ -16,9 +16,11 @@ WORKDIR /app
 COPY package.json yarn.lock ./
 RUN yarn install --production --frozen-lockfile
 
-COPY server.js zklogin-inputs.js verify-prover-artifacts.js groth16-prove.js ./
+COPY server.js zklogin-inputs.js verify-prover-artifacts.js groth16-prove.js entrypoint.sh ./
+RUN chmod +x /app/entrypoint.sh
 
-# Native prover for the same snarkjs zkey. Replaces the JavaScript multiexp.
+# Optional CLI binary kept for local debugging only. Production prove uses
+# volume-mounted proverServer started by entrypoint.sh (hot zkey in RAM).
 RUN curl -fsSL -o /tmp/rapidsnark.zip \
       https://github.com/iden3/rapidsnark/releases/download/v0.0.8/rapidsnark-linux-x86_64-v0.0.8.zip \
     && unzip -j /tmp/rapidsnark.zip '*/bin/prover' -d /usr/local/bin \
@@ -27,6 +29,9 @@ RUN curl -fsSL -o /tmp/rapidsnark.zip \
     && rm -f /tmp/rapidsnark.zip
 
 ENV RAPIDSNARK_BIN=/usr/local/bin/rapidsnark
+ENV PROVE_ENGINE=proverServer
+ENV RAPIDSNARK_SERVER_URL=http://127.0.0.1:8080
+ENV OMP_NUM_THREADS=8
 
 EXPOSE 4000
-CMD ["node", "server.js"]
+CMD ["./entrypoint.sh"]
