@@ -76,6 +76,16 @@ async function verifyProverArtifacts() {
       console.error(`[zklogin-prover] missing witness binary: ${paths.witnessBinPath}`)
       process.exit(1)
     }
+    // Railway volume uploads strip +x; restore before the executable check.
+    try {
+      fs.chmodSync(paths.witnessBinPath, 0o755)
+    } catch (err) {
+      console.error(
+        `[zklogin-prover] failed to chmod witness binary: ${paths.witnessBinPath}`,
+        err.message
+      )
+      process.exit(1)
+    }
     try {
       fs.accessSync(paths.witnessBinPath, fs.constants.X_OK)
     } catch {
@@ -102,6 +112,21 @@ async function verifyProverArtifacts() {
       console.log('[zklogin-prover] wasm ok (optional; WITNESS_ENGINE=cpp)')
       console.log(`[zklogin-prover] path: ${paths.wasmPath}`)
       console.log(`[zklogin-prover] sha256: ${actual}`)
+    }
+  }
+
+  // Same volume-upload +x strip for OpenMP rapidsnark when pointed at /app/keys.
+  const rapidsnarkBin = process.env.RAPIDSNARK_BIN
+  if (rapidsnarkBin && fs.existsSync(rapidsnarkBin)) {
+    try {
+      fs.chmodSync(rapidsnarkBin, 0o755)
+      console.log('[zklogin-prover] rapidsnark-bin chmod ok')
+      console.log(`[zklogin-prover] path: ${rapidsnarkBin}`)
+    } catch (err) {
+      console.warn(
+        `[zklogin-prover] failed to chmod rapidsnark binary: ${rapidsnarkBin}`,
+        err.message
+      )
     }
   }
 
