@@ -33,23 +33,21 @@ function resolveWitnessEngine(explicit) {
   return raw === 'wasm' ? 'wasm' : 'cpp'
 }
 
-/** Circom C++ witness expects JSON values as decimal strings. */
-function circuitInputForCpp(input) {
-  const out = {}
-  for (const [key, value] of Object.entries(input)) {
-    if (Array.isArray(value)) {
-      out[key] = value.map((v) => (typeof v === 'string' ? v : String(v)))
-    } else if (value != null && typeof value === 'object') {
-      out[key] = circuitInputForCpp(value)
-    } else if (typeof value === 'bigint') {
-      out[key] = value.toString()
-    } else if (typeof value === 'number') {
-      out[key] = String(value)
-    } else {
-      out[key] = value
-    }
+/** Circom C++ witness expects JSON numbers/strings; keep nested array shape. */
+function circuitInputForCpp(value) {
+  if (Array.isArray(value)) {
+    return value.map(circuitInputForCpp)
   }
-  return out
+  if (value != null && typeof value === 'object') {
+    const out = {}
+    for (const [key, v] of Object.entries(value)) {
+      out[key] = circuitInputForCpp(v)
+    }
+    return out
+  }
+  if (typeof value === 'bigint') return value.toString()
+  if (typeof value === 'number') return String(value)
+  return value
 }
 
 function sampleResources() {
