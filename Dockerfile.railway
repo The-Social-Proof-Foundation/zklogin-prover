@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     libstdc++6 \
+    libsodium23 \
+    libgomp1 \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
