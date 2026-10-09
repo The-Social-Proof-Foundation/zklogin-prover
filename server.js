@@ -75,11 +75,16 @@ function parseJWT(token) {
         const header = JSON.parse(headerJson);
         
         // Validate header structure
-        if (!header.alg || !header.typ) {
-            throw new Error('Invalid JWT header: missing required fields (alg, typ)');
+        // `typ` is optional per RFC 7519 (Apple id_tokens omit it); only `alg` is required.
+        if (!header.alg) {
+            throw new Error('Invalid JWT header: missing required field (alg)');
         }
-        
-        if (header.typ !== 'JWT') {
+
+        if (header.alg !== 'RS256') {
+            throw new Error(`Invalid JWT header: unsupported alg ${header.alg}`);
+        }
+
+        if (header.typ && String(header.typ).toUpperCase() !== 'JWT') {
             throw new Error('Invalid token type: expected JWT');
         }
 
